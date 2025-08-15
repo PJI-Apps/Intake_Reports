@@ -196,7 +196,7 @@ class UIManager:
             calls_uploader, up_leads, up_init, up_disc, up_ncl,
             calls_period_key, upload_start, upload_end, force_replace_calls,
             replace_leads, replace_init, replace_disc, replace_ncl
-            )
+        )
     
     def render_calls_report(self, data_manager):
         """Render the calls report section"""
@@ -615,5 +615,6 @@ class UIManager:
   <tbody>""" + trs + """</tbody>
 </table>"""
         st.markdown(html, unsafe_allow_html=True)
+
 
 
