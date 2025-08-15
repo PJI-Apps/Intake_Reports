@@ -601,10 +601,22 @@ class VisualizationManager:
         attorney_col_name = attorney_data[0][2]
         result['Attorney'] = result[attorney_col_name]
         
-        # Calculate total cases
-        result['Total Cases'] = result['leads'] + result['retained']
+        # Calculate total cases - safely handle missing columns
+        total_cases = 0
+        if 'leads' in result.columns:
+            total_cases += result['leads'].fillna(0)
+        if 'retained' in result.columns:
+            total_cases += result['retained'].fillna(0)
+        result['Total Cases'] = total_cases
         
-        final_result = result[['Attorney', 'Conversion Rate', 'Total Cases']].sort_values('Conversion Rate', ascending=False)
+        # Ensure all required columns exist
+        required_columns = ['Attorney', 'Conversion Rate', 'Total Cases']
+        missing_columns = [col for col in required_columns if col not in result.columns]
+        if missing_columns:
+            st.warning(f"Missing required columns for attorney metrics: {missing_columns}")
+            return None
+            
+        final_result = result[required_columns].sort_values('Conversion Rate', ascending=False)
         
         # Return None if no meaningful data
         if final_result.empty or final_result['Total Cases'].sum() == 0:
@@ -653,10 +665,22 @@ class VisualizationManager:
         practice_col_name = practice_data[0][2]
         result['Practice Area'] = result[practice_col_name]
         
-        # Calculate total cases
-        result['Cases'] = result['leads'] + result['retained']
+        # Calculate total cases - safely handle missing columns
+        total_cases = 0
+        if 'leads' in result.columns:
+            total_cases += result['leads'].fillna(0)
+        if 'retained' in result.columns:
+            total_cases += result['retained'].fillna(0)
+        result['Cases'] = total_cases
         
-        final_result = result[['Practice Area', 'Cases', 'Conversion Rate']].sort_values('Cases', ascending=False)
+        # Ensure all required columns exist
+        required_columns = ['Practice Area', 'Cases', 'Conversion Rate']
+        missing_columns = [col for col in required_columns if col not in result.columns]
+        if missing_columns:
+            st.warning(f"Missing required columns for practice area metrics: {missing_columns}")
+            return None
+            
+        final_result = result[required_columns].sort_values('Cases', ascending=False)
         
         # Return None if no meaningful data
         if final_result.empty or final_result['Cases'].sum() == 0:
