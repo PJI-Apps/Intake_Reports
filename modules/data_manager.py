@@ -132,7 +132,11 @@ class DataManager:
             for c in df.columns:
                 cl = c.lower()
                 if ("date" in cl or "with pji law" in cl) and not cl.startswith("__batch"):
+                    # Handle timezone-aware dates by removing timezone info first
                     df[c] = pd.to_datetime(df[c], errors="coerce", format="mixed")
+                    # If timezone info exists, convert to naive datetime
+                    if df[c].dt.tz is not None:
+                        df[c] = df[c].dt.tz_localize(None)
             
             return df.dropna(how="all").fillna("")
             
