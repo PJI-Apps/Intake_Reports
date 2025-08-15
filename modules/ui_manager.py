@@ -399,58 +399,75 @@ class UIManager:
         st.caption(f"Showing Conversion metrics for **{start_date:%-d %b %Y} → {end_date:%-d %b %Y}**")
         
         # Filtered slices (date-in-range only; column names are fixed by your files)
-        # Find the correct column names
-        ic_date_col = self._find_col(data_manager.df_ic, ["Initial Consultation With Pji Law"])
-        dm_date_col = self._find_col(data_manager.df_dm, ["Discovery Meeting With Pji Law"])
-        ncl_date_col = self._find_col(data_manager.df_ncl, ["Date we had BOTH the signed CLA and full payment"])
+        # Find the correct column names - safely check if dataframes exist
+        ic_date_col = None
+        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+            ic_date_col = self._find_col(data_manager.df_ic, ["Initial Consultation With Pji Law"])
+        
+        dm_date_col = None
+        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+            dm_date_col = self._find_col(data_manager.df_dm, ["Discovery Meeting With Pji Law"])
+        
+        ncl_date_col = None
+        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+            ncl_date_col = self._find_col(data_manager.df_ncl, ["Date we had BOTH the signed CLA and full payment"])
         
         if ic_date_col is None:
-            st.error(f"Could not find Initial Consultation date column. Available columns: {list(data_manager.df_ic.columns) if not data_manager.df_ic.empty else 'No data'}")
-            init_mask = pd.Series(False, index=data_manager.df_ic.index if not data_manager.df_ic.empty else [])
+            if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+                st.error(f"Could not find Initial Consultation date column. Available columns: {list(data_manager.df_ic.columns)}")
+            else:
+                st.warning("No Initial Consultation data available")
+            init_mask = pd.Series(False, index=data_manager.df_ic.index if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else [])
         else:
             st.success(f"Found IC date column: {ic_date_col}")
             init_mask = self._mask_by_range_dates(data_manager.df_ic, ic_date_col, start_date, end_date)
         
         if dm_date_col is None:
-            st.error(f"Could not find Discovery Meeting date column. Available columns: {list(data_manager.df_dm.columns) if not data_manager.df_dm.empty else 'No data'}")
-            disc_mask = pd.Series(False, index=data_manager.df_dm.index if not data_manager.df_dm.empty else [])
+            if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+                st.error(f"Could not find Discovery Meeting date column. Available columns: {list(data_manager.df_dm.columns)}")
+            else:
+                st.warning("No Discovery Meeting data available")
+            disc_mask = pd.Series(False, index=data_manager.df_dm.index if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else [])
         else:
             st.success(f"Found DM date column: {dm_date_col}")
             disc_mask = self._mask_by_range_dates(data_manager.df_dm, dm_date_col, start_date, end_date)
         
         if ncl_date_col is None:
-            st.error(f"Could not find NCL date column. Available columns: {list(data_manager.df_ncl.columns) if not data_manager.df_ncl.empty else 'No data'}")
-            ncl_mask = pd.Series(False, index=data_manager.df_ncl.index if not data_manager.df_ncl.empty else [])
+            if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+                st.error(f"Could not find NCL date column. Available columns: {list(data_manager.df_ncl.columns)}")
+            else:
+                st.warning("No New Client List data available")
+            ncl_mask = pd.Series(False, index=data_manager.df_ncl.index if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else [])
         else:
             st.success(f"Found NCL date column: {ncl_date_col}")
             ncl_mask = self._mask_by_range_dates(data_manager.df_ncl, ncl_date_col, start_date, end_date)
         
-        init_in = data_manager.df_ic.loc[init_mask].copy() if not data_manager.df_ic.empty else pd.DataFrame()
-        disc_in = data_manager.df_dm.loc[disc_mask].copy() if not data_manager.df_dm.empty else pd.DataFrame()
-        ncl_in  = data_manager.df_ncl.loc[ncl_mask].copy()  if not data_manager.df_ncl.empty  else pd.DataFrame()
+        init_in = data_manager.df_ic.loc[init_mask].copy() if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.DataFrame()
+        disc_in = data_manager.df_dm.loc[disc_mask].copy() if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.DataFrame()
+        ncl_in  = data_manager.df_ncl.loc[ncl_mask].copy()  if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty  else pd.DataFrame()
         
         # Leads & PNCs — batch period overlap (unchanged)
-        if not data_manager.df_leads.empty and {"__batch_start","__batch_end"} <= set(data_manager.df_leads.columns):
+        if hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty and {"__batch_start","__batch_end"} <= set(data_manager.df_leads.columns):
             bs = pd.to_datetime(data_manager.df_leads["__batch_start"], errors="coerce")
             be = pd.to_datetime(data_manager.df_leads["__batch_end"],   errors="coerce")
             start_ts, end_ts = pd.Timestamp(start_date), pd.Timestamp(end_date)
             leads_in_range = (bs <= end_ts) & (be >= start_ts)
         else:
-            leads_in_range = pd.Series(False, index=data_manager.df_leads.index)
+            leads_in_range = pd.Series(False, index=data_manager.df_leads.index if hasattr(data_manager, 'df_leads') else [])
         
         row1 = int(
             data_manager.df_leads.loc[
                 leads_in_range &
                 (data_manager.df_leads["Stage"].astype(str).str.strip() != "Marketing/Scam/Spam (Non-Lead)")
             ].shape[0]
-        ) if not data_manager.df_leads.empty and "Stage" in data_manager.df_leads.columns else 0
+        ) if hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty and "Stage" in data_manager.df_leads.columns else 0
         
         row2 = int(
             data_manager.df_leads.loc[
                 leads_in_range &
                 (~data_manager.df_leads["Stage"].astype(str).str.strip().isin(EXCLUDED_PNC_STAGES))
             ].shape[0]
-        ) if not data_manager.df_leads.empty and "Stage" in data_manager.df_leads.columns else 0
+        ) if hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty and "Stage" in data_manager.df_leads.columns else 0
         
         # Compute scheduled/met for IC and DM
         ic_sched, ic_met = self._scheduled_and_met(init_in)
