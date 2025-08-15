@@ -466,6 +466,9 @@ class UIManager:
         
         st.caption(f"Showing Conversion metrics for **{start_date:%-d %b %Y} → {end_date:%-d %b %Y}**")
         
+        # Store date range in session state for other reports to use
+        st.session_state["conversion_date_range"] = (start_date, end_date)
+        
         # Filtered slices (date-in-range only; column names are fixed by your files)
         # Find the correct column names - safely check if dataframes exist
         ic_date_col = None
@@ -598,7 +601,7 @@ class UIManager:
         with st.expander("📊 Summary", expanded=False):
             st.markdown(html_table, unsafe_allow_html=True)
     
-    def render_practice_area_report(self, data_manager):
+    def render_practice_area_report(self, data_manager, start_date=None, end_date=None):
         """Render the practice area report section"""
         st.header("📊 Practice Area")
         
@@ -606,70 +609,102 @@ class UIManager:
         if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
             data_manager.load_all_data()
         
-        # Use the same date range as conversion report
-        # This should be passed from the conversion report or use a shared state
-        # For now, we'll use the same logic as conversion report
-        with st.expander("📅 Filter", expanded=False):
-            row = st.columns([2, 1, 1])  # Period (wide), Year, Month
-        
-        months_map_names = {
-            1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
-            7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"
-        }
-        month_nums = list(months_map_names.keys())
-        
-        # Check if dataframes exist before calling _years_from
-        years_detected = set()
-        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
-            years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
-        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
-            years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
-        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
-            years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
-        years_conv = sorted(years_detected) if years_detected else [date.today().year]
-        
-        with row[0]:
-            period_mode = st.radio(
-                "Period",
-                ["Month to date", "Full month", "Year to date", "Week of month", "Custom range"],
-                horizontal=True,
-                key="practice_period_mode"
-            )
-        with row[1]:
-            sel_year_conv = st.selectbox("Year", years_conv, index=len(years_conv)-1, key="practice_year")
-        with row[2]:
-            sel_month_num = st.selectbox(
-                "Month",
-                month_nums,
-                index=date.today().month-1,
-                format_func=lambda m: months_map_names[m],
-                key="practice_month"
-            )
-        
-        # Resolve period → (start_date, end_date) - same logic as conversion report
-        if period_mode == "Month to date":
-            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
-            if date.today().month == sel_month_num and date.today().year == sel_year_conv:
-                start_date, end_date = mstart, self._clamp_to_today(mend)
+        # If no date range provided, try to get it from conversion report, otherwise use the same logic
+        if start_date is None or end_date is None:
+            # Try to get date range from conversion report
+            conversion_range = st.session_state.get("conversion_date_range")
+            if conversion_range:
+                start_date, end_date = conversion_range
+                st.info(f"📅 Using date range from Conversion Report: {start_date:%-d %b %Y} → {end_date:%-d %b %Y}")
             else:
-                start_date, end_date = mstart, mend
-        elif period_mode == "Full month":
-            start_date, end_date = self._month_bounds(sel_year_conv, sel_month_num)
-        elif period_mode == "Year to date":
-            y_start = date(sel_year_conv, 1, 1)
-            y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
-            start_date, end_date = y_start, y_end
-        else:
-            # For now, use month to date as default
-            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
-            start_date, end_date = mstart, self._clamp_to_today(mend)
+                with st.expander("📅 Filter", expanded=False):
+                    row = st.columns([2, 1, 1])  # Period (wide), Year, Month
+                
+                    months_map_names = {
+                        1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
+                        7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"
+                    }
+                    month_nums = list(months_map_names.keys())
+                    
+                    # Check if dataframes exist before calling _years_from
+                    years_detected = set()
+                    if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+                        years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
+                    if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+                        years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
+                    if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+                        years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
+                    years_conv = sorted(years_detected) if years_detected else [date.today().year]
+                    
+                    with row[0]:
+                        period_mode = st.radio(
+                            "Period",
+                            ["Month to date", "Full month", "Year to date", "Week of month", "Custom range"],
+                            horizontal=True,
+                            key="practice_period_mode"
+                        )
+                    with row[1]:
+                        sel_year_conv = st.selectbox("Year", years_conv, index=len(years_conv)-1, key="practice_year")
+                    with row[2]:
+                        sel_month_num = st.selectbox(
+                            "Month",
+                            month_nums,
+                            index=date.today().month-1,
+                            format_func=lambda m: months_map_names[m],
+                            key="practice_month"
+                        )
+                    
+                    # Resolve period → (start_date, end_date) - same logic as conversion report
+                    if period_mode == "Month to date":
+                        mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+                        if date.today().month == sel_month_num and date.today().year == sel_year_conv:
+                            start_date, end_date = mstart, self._clamp_to_today(mend)
+                        else:
+                            start_date, end_date = mstart, mend
+                    elif period_mode == "Full month":
+                        start_date, end_date = self._month_bounds(sel_year_conv, sel_month_num)
+                    elif period_mode == "Year to date":
+                        y_start = date(sel_year_conv, 1, 1)
+                        y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
+                        start_date, end_date = y_start, y_end
+                    else:
+                        # For now, use month to date as default
+                        mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+                        start_date, end_date = mstart, self._clamp_to_today(mend)
         
-        # Build counts & report using original logic
-        met_counts_raw = self._met_counts_from_ic_dm_index(
-            data_manager.df_ic if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.DataFrame(),
-            data_manager.df_dm if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.DataFrame(),
-            start_date, end_date
-        )
+        st.caption(f"Showing Practice Area metrics for **{start_date:%-d %b %Y} → {end_date:%-d %b %Y}**")
+        
+        # Build counts & report using the SAME logic as conversion report
+        # First, get the same filtered data as conversion report
+        ic_date_col = None
+        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+            ic_date_col = self._find_col(data_manager.df_ic, ["Initial Consultation With Pji Law"])
+        
+        dm_date_col = None
+        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+            dm_date_col = self._find_col(data_manager.df_dm, ["Discovery Meeting With Pji Law"])
+        
+        ncl_date_col = None
+        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+            ncl_date_col = self._find_col(data_manager.df_ncl, ["Date we had BOTH the signed CLA and full payment"])
+        
+        # Apply same filters as conversion report
+        init_mask = self._mask_by_range_dates(data_manager.df_ic, ic_date_col, start_date, end_date) if ic_date_col and hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.Series(False, index=data_manager.df_ic.index if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else [])
+        disc_mask = self._mask_by_range_dates(data_manager.df_dm, dm_date_col, start_date, end_date) if dm_date_col and hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.Series(False, index=data_manager.df_dm.index if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else [])
+        ncl_mask = self._mask_by_range_dates(data_manager.df_ncl, ncl_date_col, start_date, end_date) if ncl_date_col and hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.Series(False, index=data_manager.df_ncl.index if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else [])
+        
+        init_in = data_manager.df_ic.loc[init_mask].copy() if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.DataFrame()
+        disc_in = data_manager.df_dm.loc[disc_mask].copy() if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.DataFrame()
+        ncl_in = data_manager.df_ncl.loc[ncl_mask].copy() if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.DataFrame()
+        
+        # Now use the same logic as conversion report for "met with" and "retained"
+        # Get "met with" counts using same logic as conversion report
+        ic_sched, ic_met = self._scheduled_and_met(init_in)
+        dm_sched, dm_met = self._scheduled_and_met(disc_in)
+        
+        # For practice area, we need to break down by attorney
+        # Use the same index-based approach but with the filtered data
+        met_counts_raw = self._met_counts_from_ic_dm_index(init_in, disc_in, start_date, end_date)
         met_by_attorney = {name: 0 for name in CANON}  # Initialize all attorneys with 0
         
         # Distribute counts to appropriate attorneys, aggregating unknown ones to "Other"
@@ -680,10 +715,23 @@ class UIManager:
                 # If attorney not in CANON, add to "Other" count
                 met_by_attorney["Other"] = met_by_attorney.get("Other", 0) + int(count)
         
-        retained_by_attorney = self._retained_counts_from_ncl(
-            data_manager.df_ncl if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.DataFrame(),
-            start_date, end_date
-        )
+        # Get retained counts using same logic as conversion report
+        # NCL retained split within range (same as conversion report)
+        ncl_flag_col = None
+        for candidate in ["Retained With Consult (Y/N)", "Retained with Consult (Y/N)"]:
+            if candidate in ncl_in.columns:
+                ncl_flag_col = candidate; break
+        
+        if ncl_flag_col:
+            flag_in = ncl_in[ncl_flag_col].astype(str).str.strip().str.upper()
+            # For practice area, we want total retained (both with and without consult)
+            retained_total = int((flag_in == "N").sum()) + int((flag_in != "N").sum())  # without + with consult
+        else:
+            retained_total = int(ncl_in.shape[0])
+        
+        # For practice area, we need to break down retained by attorney
+        # Use the same robust column detection as conversion report
+        retained_by_attorney = self._retained_counts_from_ncl(ncl_in, start_date, end_date)
         
         report = pd.DataFrame({
             "Attorney": CANON,
@@ -721,7 +769,7 @@ class UIManager:
                         float(rowx["% of PNCs who met and retained"]),
                     )
     
-    def render_intake_report(self, data_manager):
+    def render_intake_report(self, data_manager, start_date=None, end_date=None):
         """Render the intake report section"""
         st.header("📊 Conversion Report: Intake")
         
@@ -729,63 +777,70 @@ class UIManager:
         if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
             data_manager.load_all_data()
         
-        # Use the same date range as conversion report
-        # This should be passed from the conversion report or use a shared state
-        # For now, we'll use the same logic as conversion report
-        with st.expander("📅 Filter", expanded=False):
-            row = st.columns([2, 1, 1])  # Period (wide), Year, Month
-        
-        months_map_names = {
-            1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
-            7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"
-        }
-        month_nums = list(months_map_names.keys())
-        
-        # Check if dataframes exist before calling _years_from
-        years_detected = set()
-        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
-            years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
-        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
-            years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
-        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
-            years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
-        years_conv = sorted(years_detected) if years_detected else [date.today().year]
-        
-        with row[0]:
-            period_mode = st.radio(
-                "Period",
-                ["Month to date", "Full month", "Year to date", "Week of month", "Custom range"],
-                horizontal=True,
-                key="intake_period_mode"
-            )
-        with row[1]:
-            sel_year_conv = st.selectbox("Year", years_conv, index=len(years_conv)-1, key="intake_year")
-        with row[2]:
-            sel_month_num = st.selectbox(
-                "Month",
-                month_nums,
-                index=date.today().month-1,
-                format_func=lambda m: months_map_names[m],
-                key="intake_month"
-            )
-        
-        # Resolve period → (start_date, end_date) - same logic as conversion report
-        if period_mode == "Month to date":
-            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
-            if date.today().month == sel_month_num and date.today().year == sel_year_conv:
-                start_date, end_date = mstart, self._clamp_to_today(mend)
+        # If no date range provided, try to get it from conversion report, otherwise use the same logic
+        if start_date is None or end_date is None:
+            # Try to get date range from conversion report
+            conversion_range = st.session_state.get("conversion_date_range")
+            if conversion_range:
+                start_date, end_date = conversion_range
+                st.info(f"📅 Using date range from Conversion Report: {start_date:%-d %b %Y} → {end_date:%-d %b %Y}")
             else:
-                start_date, end_date = mstart, mend
-        elif period_mode == "Full month":
-            start_date, end_date = self._month_bounds(sel_year_conv, sel_month_num)
-        elif period_mode == "Year to date":
-            y_start = date(sel_year_conv, 1, 1)
-            y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
-            start_date, end_date = y_start, y_end
-        else:
-            # For now, use month to date as default
-            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
-            start_date, end_date = mstart, self._clamp_to_today(mend)
+                with st.expander("📅 Filter", expanded=False):
+                    row = st.columns([2, 1, 1])  # Period (wide), Year, Month
+                
+                    months_map_names = {
+                        1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
+                        7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"
+                    }
+                    month_nums = list(months_map_names.keys())
+                    
+                    # Check if dataframes exist before calling _years_from
+                    years_detected = set()
+                    if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+                        years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
+                    if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+                        years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
+                    if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+                        years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
+                    years_conv = sorted(years_detected) if years_detected else [date.today().year]
+                    
+                    with row[0]:
+                        period_mode = st.radio(
+                            "Period",
+                            ["Month to date", "Full month", "Year to date", "Week of month", "Custom range"],
+                            horizontal=True,
+                            key="intake_period_mode"
+                        )
+                    with row[1]:
+                        sel_year_conv = st.selectbox("Year", years_conv, index=len(years_conv)-1, key="intake_year")
+                    with row[2]:
+                        sel_month_num = st.selectbox(
+                            "Month",
+                            month_nums,
+                            index=date.today().month-1,
+                            format_func=lambda m: months_map_names[m],
+                            key="intake_month"
+                        )
+                    
+                    # Resolve period → (start_date, end_date) - same logic as conversion report
+                    if period_mode == "Month to date":
+                        mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+                        if date.today().month == sel_month_num and date.today().year == sel_year_conv:
+                            start_date, end_date = mstart, self._clamp_to_today(mend)
+                        else:
+                            start_date, end_date = mstart, mend
+                    elif period_mode == "Full month":
+                        start_date, end_date = self._month_bounds(sel_year_conv, sel_month_num)
+                    elif period_mode == "Year to date":
+                        y_start = date(sel_year_conv, 1, 1)
+                        y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
+                        start_date, end_date = y_start, y_end
+                    else:
+                        # For now, use month to date as default
+                        mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+                        start_date, end_date = mstart, self._clamp_to_today(mend)
+        
+        st.caption(f"Showing Intake metrics for **{start_date:%-d %b %Y} → {end_date:%-d %b %Y}**")
         
         # Calculate intake metrics for all specialists using original logic
         intake_specialists = INTAKE_SPECIALISTS + ["Everyone Else"]
