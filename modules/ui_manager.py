@@ -17,6 +17,11 @@ from .config import (
     EXCLUDED_PNC_STAGES, TAB_NAMES
 )
 
+# Canonical list (stable order) - include all attorneys from practice areas
+CANON = list(dict.fromkeys(sum(PRACTICE_AREAS.values(), [])))
+# Add "Other" as a special category for attorneys not in predefined lists
+CANON.append("Other")
+
 class UIManager:
     """Manages all user interface components and report rendering"""
     
@@ -308,120 +313,309 @@ class UIManager:
         st.markdown("---")
         st.header("📊 Firm Conversion Report")
         
-        # Date range selector
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Start Date",
-                value=date.today().replace(day=1),
-                key="conv_start_date"
+        with st.expander("📅 Filter", expanded=False):
+            row = st.columns([2, 1, 1])  # Period (wide), Year, Month
+        
+        months_map_names = {
+            1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
+            7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"
+        }
+        month_nums = list(months_map_names.keys())
+        
+        years_detected = self._years_from(
+            (data_manager.df_ncl,  "Date we had BOTH the signed CLA and full payment"),
+            (data_manager.df_ic, "Initial Consultation With Pji Law"),
+            (data_manager.df_dm, "Discovery Meeting With Pji Law"),
+        )
+        years_conv = sorted(years_detected) if years_detected else [date.today().year]
+        
+        with row[0]:
+            period_mode = st.radio(
+                "Period",
+                ["Month to date", "Full month", "Year to date", "Week of month", "Custom range"],
+                horizontal=True,
             )
-        with col2:
-            end_date = st.date_input(
-                "End Date", 
-                value=date.today(),
-                key="conv_end_date"
+        with row[1]:
+            sel_year_conv = st.selectbox("Year", years_conv, index=len(years_conv)-1)
+        with row[2]:
+            sel_month_num = st.selectbox(
+                "Month",
+                month_nums,
+                index=date.today().month-1,
+                format_func=lambda m: months_map_names[m]
             )
         
-        if start_date > end_date:
-            st.error("Start date must be on or before end date.")
-            return
+        week_defs = None
+        sel_week_idx = 1
+        if period_mode == "Week of month":
+            week_defs = self._custom_weeks_for_month(sel_year_conv, sel_month_num)
+            def _wk_label(i):
+                wk = week_defs[i]; sd, ed = wk["start"], wk["end"]
+                return f'{wk["label"]} ({sd.day}–{ed.day} {ed.strftime("%b")})'
+            sel_week_idx = st.selectbox("Week of month",
+                                        options=list(range(len(week_defs))),
+                                        index=1, format_func=_wk_label)
         
-        st.caption(f"Showing Conversion metrics for **{start_date.strftime('%-d %b %Y')} → {end_date.strftime('%-d %b %Y')}**")
+        cust_cols = st.columns(2)
+        custom_start = custom_end = None
+        if period_mode == "Custom range":
+            custom_start = cust_cols[0].date_input("Start date", value=date.today().replace(day=1))
+            custom_end   = cust_cols[1].date_input("End date",   value=date.today())
+            if custom_start > custom_end:
+                st.error("Start date must be on or before End date."); st.stop()
+        
+        # Resolve period → (start_date, end_date)
+        if period_mode == "Month to date":
+            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+            if date.today().month == sel_month_num and date.today().year == sel_year_conv:
+                start_date, end_date = mstart, self._clamp_to_today(mend)
+            else:
+                start_date, end_date = mstart, mend
+        elif period_mode == "Full month":
+            start_date, end_date = self._month_bounds(sel_year_conv, sel_month_num)
+        elif period_mode == "Year to date":
+            y_start = date(sel_year_conv, 1, 1)
+            y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
+            start_date, end_date = y_start, y_end
+        elif period_mode == "Week of month":
+            wk = week_defs[sel_week_idx]
+            start_date, end_date = wk["start"], wk["end"]
+        else:
+            start_date, end_date = custom_start, custom_end
+        
+        st.caption(f"Showing Conversion metrics for **{start_date:%-d %b %Y} → {end_date:%-d %b %Y}**")
         
         # Load data if not already loaded
         if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
             data_manager.load_all_data()
         
-        # Calculate conversion metrics
-        conversion_data = self._calculate_conversion_metrics(data_manager, start_date, end_date)
+        # Filtered slices (date-in-range only; column names are fixed by your files)
+        # Find the correct column names
+        ic_date_col = self._find_col(data_manager.df_ic, ["Initial Consultation With Pji Law"])
+        dm_date_col = self._find_col(data_manager.df_dm, ["Discovery Meeting With Pji Law"])
+        ncl_date_col = self._find_col(data_manager.df_ncl, ["Date we had BOTH the signed CLA and full payment"])
         
-        if not conversion_data:
-            st.info("No conversion data available for the selected period.")
-            return
+        if ic_date_col is None:
+            st.error(f"Could not find Initial Consultation date column. Available columns: {list(data_manager.df_ic.columns) if not data_manager.df_ic.empty else 'No data'}")
+            init_mask = pd.Series(False, index=data_manager.df_ic.index if not data_manager.df_ic.empty else [])
+        else:
+            st.success(f"Found IC date column: {ic_date_col}")
+            init_mask = self._mask_by_range_dates(data_manager.df_ic, ic_date_col, start_date, end_date)
         
-        # Display conversion funnel
-        col1, col2, col3, col4 = st.columns(4)
+        if dm_date_col is None:
+            st.error(f"Could not find Discovery Meeting date column. Available columns: {list(data_manager.df_dm.columns) if not data_manager.df_dm.empty else 'No data'}")
+            disc_mask = pd.Series(False, index=data_manager.df_dm.index if not data_manager.df_dm.empty else [])
+        else:
+            st.success(f"Found DM date column: {dm_date_col}")
+            disc_mask = self._mask_by_range_dates(data_manager.df_dm, dm_date_col, start_date, end_date)
         
-        with col1:
-            st.metric("Total Leads", conversion_data['leads'])
+        if ncl_date_col is None:
+            st.error(f"Could not find NCL date column. Available columns: {list(data_manager.df_ncl.columns) if not data_manager.df_ncl.empty else 'No data'}")
+            ncl_mask = pd.Series(False, index=data_manager.df_ncl.index if not data_manager.df_ncl.empty else [])
+        else:
+            st.success(f"Found NCL date column: {ncl_date_col}")
+            ncl_mask = self._mask_by_range_dates(data_manager.df_ncl, ncl_date_col, start_date, end_date)
         
-        with col2:
-            st.metric("Consultations", conversion_data['consultations'])
+        init_in = data_manager.df_ic.loc[init_mask].copy() if not data_manager.df_ic.empty else pd.DataFrame()
+        disc_in = data_manager.df_dm.loc[disc_mask].copy() if not data_manager.df_dm.empty else pd.DataFrame()
+        ncl_in  = data_manager.df_ncl.loc[ncl_mask].copy()  if not data_manager.df_ncl.empty  else pd.DataFrame()
         
-        with col3:
-            st.metric("Discovery Meetings", conversion_data['discovery_meetings'])
+        # Leads & PNCs — batch period overlap (unchanged)
+        if not data_manager.df_leads.empty and {"__batch_start","__batch_end"} <= set(data_manager.df_leads.columns):
+            bs = pd.to_datetime(data_manager.df_leads["__batch_start"], errors="coerce")
+            be = pd.to_datetime(data_manager.df_leads["__batch_end"],   errors="coerce")
+            start_ts, end_ts = pd.Timestamp(start_date), pd.Timestamp(end_date)
+            leads_in_range = (bs <= end_ts) & (be >= start_ts)
+        else:
+            leads_in_range = pd.Series(False, index=data_manager.df_leads.index)
         
-        with col4:
-            st.metric("Retained", conversion_data['retained'])
+        row1 = int(
+            data_manager.df_leads.loc[
+                leads_in_range &
+                (data_manager.df_leads["Stage"].astype(str).str.strip() != "Marketing/Scam/Spam (Non-Lead)")
+            ].shape[0]
+        ) if not data_manager.df_leads.empty and "Stage" in data_manager.df_leads.columns else 0
         
-        # Conversion rate
-        st.metric("Overall Conversion Rate", f"{conversion_data['conversion_rate']}%")
+        row2 = int(
+            data_manager.df_leads.loc[
+                leads_in_range &
+                (~data_manager.df_leads["Stage"].astype(str).str.strip().isin(EXCLUDED_PNC_STAGES))
+            ].shape[0]
+        ) if not data_manager.df_leads.empty and "Stage" in data_manager.df_leads.columns else 0
         
-        # Show detailed breakdown
-        with st.expander("📊 Detailed Conversion Breakdown", expanded=False):
-            self._render_conversion_funnel(conversion_data)
+        # Compute scheduled/met for IC and DM
+        ic_sched, ic_met = self._scheduled_and_met(init_in)
+        dm_sched, dm_met = self._scheduled_and_met(disc_in)
+        
+        # NCL retained split within range (unchanged)
+        ncl_flag_col = None
+        for candidate in ["Retained With Consult (Y/N)", "Retained with Consult (Y/N)"]:
+            if candidate in ncl_in.columns:
+                ncl_flag_col = candidate; break
+        
+        if ncl_flag_col:
+            flag_in = ncl_in[ncl_flag_col].astype(str).str.strip().str.upper()
+            row3 = int((flag_in == "N").sum())           # retained without consult
+            row8 = int((flag_in != "N").sum())           # retained after consult
+        else:
+            row3 = 0
+            row8 = int(ncl_in.shape[0])
+        
+        row10 = int(ncl_in.shape[0])                     # total retained
+        row4  = int(ic_sched + dm_sched)                 # scheduled consultations
+        row6  = int(ic_met   + dm_met)                   # met (showed) consultations
+        
+        row5  = self._pct(row4, (row2 - row3))
+        row7  = self._pct(row6, row4)
+        row9  = self._pct(row8, row4)
+        row11 = self._pct(row10, row2)
+        
+        # Static HTML KPI table
+        kpi_rows = [
+            ("# of Leads", row1),
+            ("# of PNCs", row2),
+            ("PNCs who retained without consultation", row3),
+            ("PNCs who scheduled consultation", row4),
+            ("% of remaining PNCs who scheduled consult", f"{row5}%"),
+            ("# of PNCs who showed up for consultation", row6),
+            ("% of PNCs who scheduled consult showed up", f"{row7}%"),
+            ("PNCs who retained after scheduled consult", row8),
+            ("% of PNCs who retained after consult", f"{row9}%"),
+            ("# of Total PNCs who retained", row10),
+            ("% of total PNCs who retained", f"{row11}%"),
+        ]
+        table_rows = "\n".join(
+            f"<tr><td>{self._html_escape(k)}</td><td style='text-align:right'>{self._html_escape(v)}</td></tr>"
+            for k, v in kpi_rows
+        )
+        html_table = """
+<style>
+.kpi-table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+.kpi-table th, .kpi-table td { border: 1px solid #eee; padding: 10px 12px; }
+.kpi-table th { background: #fafafa; text-align: left; font-weight: 600; }
+</style>
+<table class="kpi-table">
+  <thead><tr><th>Metric</th><th>Value</th></tr></thead>
+  <tbody>
+    """ + table_rows + """
+  </tbody>
+</table>
+"""
+        with st.expander("📊 Summary", expanded=False):
+            st.markdown(html_table, unsafe_allow_html=True)
     
     def render_practice_area_report(self, data_manager):
         """Render the practice area report section"""
         st.header("📊 Practice Area")
         
-        # Date range selector
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "Start Date",
-                value=date.today().replace(day=1),
-                key="practice_start_date"
-            )
-        with col2:
-            end_date = st.date_input(
-                "End Date", 
-                value=date.today(),
-                key="practice_end_date"
-            )
-        
-        if start_date > end_date:
-            st.error("Start date must be on or before end date.")
-            return
-        
         # Load data if not already loaded
         if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
             data_manager.load_all_data()
         
-        # Get practice area metrics
-        practice_data = self._get_practice_area_metrics_for_report(data_manager, start_date, end_date)
+        # Use the same date range as conversion report
+        # This should be passed from the conversion report or use a shared state
+        # For now, we'll use the same logic as conversion report
+        with st.expander("📅 Filter", expanded=False):
+            row = st.columns([2, 1, 1])  # Period (wide), Year, Month
         
-        if not practice_data:
-            st.info("No practice area data available for the selected period.")
-            return
+        months_map_names = {
+            1:"January",2:"February",3:"March",4:"April",5:"May",6:"June",
+            7:"July",8:"August",9:"September",10:"October",11:"November",12:"December"
+        }
+        month_nums = list(months_map_names.keys())
         
-        # Display practice area metrics
-        st.subheader("Practice Area Performance")
+        years_detected = self._years_from(
+            (data_manager.df_ncl,  "Date we had BOTH the signed CLA and full payment"),
+            (data_manager.df_ic, "Initial Consultation With Pji Law"),
+            (data_manager.df_dm, "Discovery Meeting With Pji Law"),
+        )
+        years_conv = sorted(years_detected) if years_detected else [date.today().year]
         
-        # Create a DataFrame for display
-        practice_df = pd.DataFrame(practice_data)
+        with row[0]:
+            period_mode = st.radio(
+                "Period",
+                ["Month to date", "Full month", "Year to date", "Week of month", "Custom range"],
+                horizontal=True,
+                key="practice_period_mode"
+            )
+        with row[1]:
+            sel_year_conv = st.selectbox("Year", years_conv, index=len(years_conv)-1, key="practice_year")
+        with row[2]:
+            sel_month_num = st.selectbox(
+                "Month",
+                month_nums,
+                index=date.today().month-1,
+                format_func=lambda m: months_map_names[m],
+                key="practice_month"
+            )
         
-        # Display metrics
-        col1, col2, col3 = st.columns(3)
+        # Resolve period → (start_date, end_date) - same logic as conversion report
+        if period_mode == "Month to date":
+            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+            if date.today().month == sel_month_num and date.today().year == sel_year_conv:
+                start_date, end_date = mstart, self._clamp_to_today(mend)
+            else:
+                start_date, end_date = mstart, mend
+        elif period_mode == "Full month":
+            start_date, end_date = self._month_bounds(sel_year_conv, sel_month_num)
+        elif period_mode == "Year to date":
+            y_start = date(sel_year_conv, 1, 1)
+            y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
+            start_date, end_date = y_start, y_end
+        else:
+            # For now, use month to date as default
+            mstart, mend = self._month_bounds(sel_year_conv, sel_month_num)
+            start_date, end_date = mstart, self._clamp_to_today(mend)
         
-        with col1:
-            st.metric("Total Cases", practice_df['Cases'].sum())
+        # Build counts & report using original logic
+        met_counts_raw = self._met_counts_from_ic_dm_index(data_manager.df_ic, data_manager.df_dm, start_date, end_date)
+        met_by_attorney = {name: 0 for name in CANON}  # Initialize all attorneys with 0
         
-        with col2:
-            avg_conversion = practice_df['Conversion Rate'].mean()
-            st.metric("Average Conversion Rate", f"{avg_conversion:.1f}%")
+        # Distribute counts to appropriate attorneys, aggregating unknown ones to "Other"
+        for name, count in met_counts_raw.items():
+            if name in CANON:
+                met_by_attorney[name] = int(count)
+            else:
+                # If attorney not in CANON, add to "Other" count
+                met_by_attorney["Other"] = met_by_attorney.get("Other", 0) + int(count)
         
-        with col3:
-            best_practice = practice_df.loc[practice_df['Conversion Rate'].idxmax(), 'Practice Area']
-            st.metric("Best Performing Area", best_practice)
+        retained_by_attorney = self._retained_counts_from_ncl(data_manager.df_ncl, start_date, end_date)
         
-        # Display practice area table
-        st.dataframe(practice_df, use_container_width=True)
+        report = pd.DataFrame({
+            "Attorney": CANON,
+            "Practice Area": [ self._practice_for(a) if a != "Other" else "Other" for a in CANON ],
+        })
+        report["PNCs who met"] = report["Attorney"].map(lambda a: int(met_by_attorney.get(a, 0)))
+        report["PNCs who met and retained"] = report["Attorney"].map(lambda a: int(retained_by_attorney.get(a, 0)))
+        report["Attorney_Display"] = report["Attorney"].map(lambda a: "Other" if a == "Other" else self._disp(a))
+        report["% of PNCs who met and retained"] = report.apply(
+            lambda r: 0.0 if int(r["PNCs who met"]) == 0  # Use individual attorney's "met with" count as denominator
+                      else round((int(r["PNCs who met and retained"]) / int(r["PNCs who met"])) * 100.0, 2),
+            axis=1
+        )
         
-        # Show practice area comparison chart
-        with st.expander("📊 Practice Area Comparison", expanded=False):
-            self._render_practice_area_comparison(practice_data)
+        # Render per practice area
+        for pa in ["Estate Planning","Estate Administration","Civil Litigation","Business transactional","Other"]:
+            sub = report.loc[report["Practice Area"] == pa].copy()
+            met_sum  = int(sub["PNCs who met"].sum())
+            kept_sum = int(sub["PNCs who met and retained"].sum())
+            pct_sum  = 0.0 if met_sum == 0 else round((kept_sum / met_sum) * 100.0, 0)
+        
+            with st.expander(pa, expanded=False):
+                attys = ["ALL"] + sub["Attorney_Display"].tolist()
+                pick = st.selectbox(f"{pa} — choose attorney", attys, key=f"pa_pick_{pa.replace(' ','_')}")
+                if pick == "ALL":
+                    # For ALL, calculate percentage based on practice area's total "met with" count
+                    pct_all = 0.0 if met_sum == 0 else round((kept_sum / met_sum) * 100.0, 0)
+                    self._render_three_row_card("ALL", met_sum, kept_sum, pct_all)
+                else:
+                    rowx = sub.loc[sub["Attorney_Display"] == pick].iloc[0]
+                    self._render_three_row_card(
+                        pick,
+                        int(rowx["PNCs who met"]),
+                        int(rowx["PNCs who met and retained"]),
+                        float(rowx["% of PNCs who met and retained"]),
+                    )
     
     def render_intake_report(self, data_manager):
         """Render the intake report section"""
@@ -1009,3 +1203,116 @@ class UIManager:
   <tbody>""" + trs + """</tbody>
 </table>"""
         st.markdown(html, unsafe_allow_html=True)
+    
+    def _custom_weeks_for_month(self, year: int, month: int) -> List[Dict]:
+        """Generate custom weeks for a month"""
+        # This is a placeholder - you'll need to implement the actual logic
+        # from your original app
+        return []
+    
+    def _met_counts_from_ic_dm_index(self, ic_df: pd.DataFrame, dm_df: pd.DataFrame,
+                                    sd: date, ed: date) -> pd.Series:
+        """Get met counts from IC and DM dataframes using index-based approach"""
+        out = {}
+
+        # Initial_Consultation: L(11)=Lead Attorney, M(12)=IC date, G(6)=Sub Status, I(8)=Reason
+        if isinstance(ic_df, pd.DataFrame) and ic_df.shape[1] >= 13:
+            att, dtc, sub, rsn = ic_df.columns[11], ic_df.columns[12], ic_df.columns[6], ic_df.columns[8]
+            t = ic_df.copy()
+            m = self._between_inclusive(t[dtc], sd, ed)
+            m &= ~t[sub].astype(str).str.strip().str.lower().eq("follow up")
+            # Exclude rows where reason contains "Canceled Meeting" or "No Show"
+            reason_str = t[rsn].astype(str).str.strip().str.lower()
+            m &= ~reason_str.str.contains("canceled meeting", na=False)
+            m &= ~reason_str.str.contains("no show", na=False)
+            vc = t.loc[m, att].astype(str).str.strip().value_counts(dropna=False)
+            for k, v in vc.items():
+                if k:
+                    out[k] = out.get(k, 0) + int(v)
+
+        # Discovery_Meeting: L(11)=Lead Attorney, P(15)=DM date, G(6)=Sub Status, I(8)=Reason
+        if isinstance(dm_df, pd.DataFrame) and dm_df.shape[1] >= 16:
+            att, dtc, sub, rsn = dm_df.columns[11], dm_df.columns[15], dm_df.columns[6], dm_df.columns[8]
+            t = dm_df.copy()
+            m = self._between_inclusive(t[dtc], sd, ed)
+            m &= ~t[sub].astype(str).str.strip().str.lower().eq("follow up")
+            # Exclude rows where reason contains "Canceled Meeting" or "No Show"
+            reason_str = t[rsn].astype(str).str.strip().str.lower()
+            m &= ~reason_str.str.contains("canceled meeting", na=False)
+            m &= ~reason_str.str.contains("no show", na=False)
+            vc = t.loc[m, att].astype(str).str.strip().value_counts(dropna=False)
+            for k, v in vc.items():
+                if k:
+                    out[k] = out.get(k, 0) + int(v)
+
+        return pd.Series(out, dtype=int)
+    
+    def _retained_counts_from_ncl(self, ncl_df: pd.DataFrame, sd: date, ed: date) -> Dict[str, int]:
+        """Get retained counts from NCL dataframe"""
+        if not isinstance(ncl_df, pd.DataFrame) or ncl_df.empty:
+            return {name: 0 for name in CANON}
+
+        def _norm(s: str) -> str:
+            s = str(s).lower().strip()
+            s = re.sub(r"[\s_]+"," ", s)
+            s = re.sub(r"[^a-z0-9 ]","", s)
+            return s
+
+        cols = list(ncl_df.columns)
+        norms = {c: _norm(c) for c in cols}
+
+        # Find date column
+        prefer_date = _norm("Date we had BOTH the signed CLA and full payment")
+        date_col = next((c for c in cols if norms[c] == prefer_date), None)
+        if date_col is None:
+            cands = [c for c in cols if all(tok in norms[c] for tok in ["date","signed","payment"])]
+            if cands:
+                cands.sort(key=lambda c: len(norms[c]))
+                date_col = cands[0]
+        if date_col is None:
+            date_col = next((c for c in cols if "date" in norms[c]), None)
+        if date_col is None and len(cols) > 6:
+            date_col = cols[6]  # Column G
+
+        # Find responsible attorney column
+        init_col = next((c for c in cols if all(tok in norms[c] for tok in ["responsible","attorney"])), None)
+        if init_col is None:
+            init_col = next((c for c in cols if "attorney" in norms[c]), None)
+        if init_col is None and len(cols) > 4:
+            init_col = cols[4]  # Column E
+
+        # Find retained flag column
+        prefer_flag = _norm("Retained With Consult (Y/N)")
+        flag_col = next((c for c in cols if norms[c] == prefer_flag), None)
+        if flag_col is None:
+            flag_col = next((c for c in cols if all(tok in norms[c] for tok in ["retained","consult"])), None)
+        if flag_col is None:
+            flag_col = next((c for c in cols if "retained" in norms[c]), None)
+        if flag_col is None and len(cols) > 5:
+            flag_col = cols[5]  # Column F
+
+        if not (date_col and init_col and flag_col):
+            return {name: 0 for name in CANON}
+
+        t = ncl_df.copy()
+        in_range = self._between_inclusive(t[date_col], sd, ed)
+        kept = t[flag_col].astype(str).str.strip().str.upper().ne("N")
+        m = in_range & kept
+
+        def _ini_to_name(s: str) -> str:
+            token = re.sub(r"[^A-Z]", "", str(s).upper())
+            return INITIALS_TO_ATTORNEY.get(token, "Other") if token else "Other"
+
+        mapped = t.loc[m, init_col].map(_ini_to_name)
+        vc = mapped.value_counts(dropna=False)
+        
+        # Initialize all attorneys with 0, then update with actual counts
+        result = {name: 0 for name in CANON}
+        for name, count in vc.items():
+            if name in result:
+                result[name] = int(count)
+            else:
+                # If attorney not in CANON, add to "Other" count
+                result["Other"] = result.get("Other", 0) + int(count)
+        
+        return result
