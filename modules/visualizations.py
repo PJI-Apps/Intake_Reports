@@ -278,7 +278,7 @@ class VisualizationManager:
         
         # Monthly conversion metrics
         conversion_metrics = self._calculate_monthly_conversion_metrics(viz_data)
-        if conversion_metrics:
+        if conversion_metrics is not None and not conversion_metrics.empty:
             fig = px.line(conversion_metrics, x='Month', y='Conversion Rate', 
                          title='Monthly Conversion Rate',
                          labels={'Conversion Rate': 'Conversion Rate (%)', 'Month': 'Month'},
@@ -298,7 +298,7 @@ class VisualizationManager:
         # Get attorney performance data
         attorney_data = self._get_attorney_performance_data(viz_data)
         
-        if not attorney_data:
+        if attorney_data is None or attorney_data.empty:
             st.info("No attorney performance data available.")
             return
         
@@ -339,7 +339,7 @@ class VisualizationManager:
         """Render practice area charts"""
         practice_data = self._get_practice_area_metrics(viz_data)
         
-        if not practice_data:
+        if practice_data is None or practice_data.empty:
             st.info("No practice area data available.")
             return
         
@@ -527,7 +527,13 @@ class VisualizationManager:
         # Convert month to string format
         result['Month'] = result['month'].astype(str)
         
-        return result[['Month', 'Conversion Rate']].sort_values('Month')
+        final_result = result[['Month', 'Conversion Rate']].sort_values('Month')
+        
+        # Return None if no meaningful data
+        if final_result.empty or final_result['Conversion Rate'].sum() == 0:
+            return None
+            
+        return final_result
     
     def _get_attorney_performance_data(self, viz_data: Dict) -> Optional[pd.DataFrame]:
         """Get attorney performance data from actual data"""
@@ -573,7 +579,13 @@ class VisualizationManager:
         # Calculate total cases
         result['Total Cases'] = result['leads'] + result['retained']
         
-        return result[['Attorney', 'Conversion Rate', 'Total Cases']].sort_values('Conversion Rate', ascending=False)
+        final_result = result[['Attorney', 'Conversion Rate', 'Total Cases']].sort_values('Conversion Rate', ascending=False)
+        
+        # Return None if no meaningful data
+        if final_result.empty or final_result['Total Cases'].sum() == 0:
+            return None
+            
+        return final_result
     
     def _get_practice_area_metrics(self, viz_data: Dict) -> Optional[pd.DataFrame]:
         """Get practice area metrics from actual data"""
@@ -619,7 +631,13 @@ class VisualizationManager:
         # Calculate total cases
         result['Cases'] = result['leads'] + result['retained']
         
-        return result[['Practice Area', 'Cases', 'Conversion Rate']].sort_values('Cases', ascending=False)
+        final_result = result[['Practice Area', 'Cases', 'Conversion Rate']].sort_values('Cases', ascending=False)
+        
+        # Return None if no meaningful data
+        if final_result.empty or final_result['Cases'].sum() == 0:
+            return None
+            
+        return final_result
     
     def _calculate_conversion_metrics(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
         """Calculate conversion metrics for the given period from actual data"""
