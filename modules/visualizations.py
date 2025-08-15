@@ -206,6 +206,56 @@ class VisualizationManager:
             return date_candidates[0]
         return None
     
+    def _find_attorney_column(self, df: pd.DataFrame) -> Optional[str]:
+        """Find the most likely attorney column in a dataframe"""
+        attorney_candidates = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in ['attorney', 'lawyer', 'assigned', 'assigned to', 'handling']):
+                attorney_candidates.append(col)
+        
+        if attorney_candidates:
+            return attorney_candidates[0]
+        return None
+    
+    def _find_practice_area_column(self, df: pd.DataFrame) -> Optional[str]:
+        """Find the most likely practice area column in a dataframe"""
+        practice_candidates = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in ['practice', 'area', 'type', 'category', 'case type']):
+                practice_candidates.append(col)
+        
+        if practice_candidates:
+            return practice_candidates[0]
+        return None
+    
+    def _mask_by_range_dates(self, df: pd.DataFrame, date_col: str, start: date, end: date) -> pd.Series:
+        """Create mask for date range filtering with robust date parsing"""
+        if df is None or df.empty or date_col not in df.columns:
+            return pd.Series([False] * (0 if df is None else len(df)))
+        
+        # Use robust date parsing with format specification to avoid warnings
+        ts = pd.to_datetime(df[date_col], errors="coerce", format="mixed")
+        if ts.isna().any():
+            y = ts.copy()
+            for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%Y-%m-%d %H:%M", "%m/%d/%Y"):
+                m = y.isna()
+                if not m.any(): 
+                    break
+                try:
+                    y.loc[m] = pd.to_datetime(df[date_col].loc[m], format=fmt, errors="coerce")
+                except Exception:
+                    pass
+            ts = y
+        
+        # Handle NaT values properly
+        valid_dates = ts.notna()
+        in_range = pd.Series([False] * len(df), index=df.index)
+        if valid_dates.any():
+            in_range.loc[valid_dates] = (ts.loc[valid_dates].dt.date >= start) & (ts.loc[valid_dates].dt.date <= end)
+        return in_range
+    
     def _render_monthly_trends(self, viz_data: Dict):
         """Render monthly trend charts"""
         # Monthly call volume
@@ -431,59 +481,188 @@ class VisualizationManager:
         st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
     
     def _calculate_monthly_conversion_metrics(self, viz_data: Dict) -> Optional[pd.DataFrame]:
-        """Calculate monthly conversion metrics"""
-        # This would calculate conversion rates from leads to retained clients
-        # For now, return a sample structure
+        """Calculate monthly conversion metrics from actual data"""
         if viz_data['leads'].empty and viz_data['ncl'].empty:
             return None
         
-        # Placeholder implementation
-        months = ['2025-01', '2025-02', '2025-03']
-        rates = [15.2, 18.7, 16.9]
+        # Get date column names
+        leads_date_col = self._find_date_column(viz_data['leads'])
+        ncl_date_col = self._find_date_column(viz_data['ncl'])
         
-        return pd.DataFrame({
-            'Month': months,
-            'Conversion Rate': rates
-        })
+        if not leads_date_col or not ncl_date_col:
+            return None
+        
+        # Calculate monthly metrics
+        monthly_data = []
+        
+        # Group by month and calculate conversion rates
+        if not viz_data['leads'].empty:
+            leads_df = viz_data['leads'].copy()
+            leads_df['month'] = pd.to_datetime(leads_df[leads_date_col]).dt.to_period('M')
+            monthly_leads = leads_df.groupby('month').size().reset_index(name='leads')
+            monthly_data.append(monthly_leads)
+        
+        if not viz_data['ncl'].empty:
+            ncl_df = viz_data['ncl'].copy()
+            ncl_df['month'] = pd.to_datetime(ncl_df[ncl_date_col]).dt.to_period('M')
+            monthly_ncl = ncl_df.groupby('month').size().reset_index(name='retained')
+            monthly_data.append(monthly_ncl)
+        
+        if not monthly_data:
+            return None
+        
+        # Merge all monthly data
+        result = monthly_data[0]
+        for data in monthly_data[1:]:
+            result = result.merge(data, on='month', how='outer')
+        
+        result = result.fillna(0)
+        
+        # Calculate conversion rate
+        if 'leads' in result.columns and 'retained' in result.columns:
+            result['Conversion Rate'] = (result['retained'] / result['leads'] * 100).round(1)
+        else:
+            result['Conversion Rate'] = 0
+        
+        # Convert month to string format
+        result['Month'] = result['month'].astype(str)
+        
+        return result[['Month', 'Conversion Rate']].sort_values('Month')
     
     def _get_attorney_performance_data(self, viz_data: Dict) -> Optional[pd.DataFrame]:
-        """Get attorney performance data"""
-        # This would aggregate data by attorney
-        # For now, return sample data
-        attorneys = ['John Smith', 'Jane Doe', 'Mike Johnson', 'Sarah Wilson']
-        conversion_rates = [22.5, 18.3, 25.1, 19.8]
-        total_cases = [45, 38, 52, 41]
+        """Get attorney performance data from actual data"""
+        # Look for attorney columns in the data
+        attorney_data = []
         
-        return pd.DataFrame({
-            'Attorney': attorneys,
-            'Conversion Rate': conversion_rates,
-            'Total Cases': total_cases
-        })
+        # Check leads data for attorney information
+        if not viz_data['leads'].empty:
+            leads_df = viz_data['leads'].copy()
+            attorney_col = self._find_attorney_column(leads_df)
+            if attorney_col:
+                leads_by_attorney = leads_df.groupby(attorney_col).size().reset_index(name='leads')
+                attorney_data.append(('leads', leads_by_attorney, attorney_col))
+        
+        # Check new client list for attorney information
+        if not viz_data['ncl'].empty:
+            ncl_df = viz_data['ncl'].copy()
+            attorney_col = self._find_attorney_column(ncl_df)
+            if attorney_col:
+                ncl_by_attorney = ncl_df.groupby(attorney_col).size().reset_index(name='retained')
+                attorney_data.append(('retained', ncl_by_attorney, attorney_col))
+        
+        if not attorney_data:
+            return None
+        
+        # Merge attorney data
+        result = attorney_data[0][1]
+        for _, data, col in attorney_data[1:]:
+            result = result.merge(data, left_on=attorney_data[0][2], right_on=col, how='outer')
+        
+        result = result.fillna(0)
+        
+        # Calculate conversion rate
+        if 'leads' in result.columns and 'retained' in result.columns:
+            result['Conversion Rate'] = (result['retained'] / result['leads'] * 100).round(1)
+        else:
+            result['Conversion Rate'] = 0
+        
+        # Use the first attorney column name
+        attorney_col_name = attorney_data[0][2]
+        result['Attorney'] = result[attorney_col_name]
+        
+        # Calculate total cases
+        result['Total Cases'] = result['leads'] + result['retained']
+        
+        return result[['Attorney', 'Conversion Rate', 'Total Cases']].sort_values('Conversion Rate', ascending=False)
     
     def _get_practice_area_metrics(self, viz_data: Dict) -> Optional[pd.DataFrame]:
-        """Get practice area metrics"""
-        # This would aggregate data by practice area
-        # For now, return sample data
-        practice_areas = ['Personal Injury', 'Medical Malpractice', 'Workers Comp', 'Other']
-        cases = [120, 85, 65, 45]
-        conversion_rates = [20.5, 18.2, 22.1, 15.8]
+        """Get practice area metrics from actual data"""
+        # Look for practice area columns in the data
+        practice_data = []
         
-        return pd.DataFrame({
-            'Practice Area': practice_areas,
-            'Cases': cases,
-            'Conversion Rate': conversion_rates
-        })
+        # Check leads data for practice area information
+        if not viz_data['leads'].empty:
+            leads_df = viz_data['leads'].copy()
+            practice_col = self._find_practice_area_column(leads_df)
+            if practice_col:
+                leads_by_practice = leads_df.groupby(practice_col).size().reset_index(name='leads')
+                practice_data.append(('leads', leads_by_practice, practice_col))
+        
+        # Check new client list for practice area information
+        if not viz_data['ncl'].empty:
+            ncl_df = viz_data['ncl'].copy()
+            practice_col = self._find_practice_area_column(ncl_df)
+            if practice_col:
+                ncl_by_practice = ncl_df.groupby(practice_col).size().reset_index(name='retained')
+                practice_data.append(('retained', ncl_by_practice, practice_col))
+        
+        if not practice_data:
+            return None
+        
+        # Merge practice area data
+        result = practice_data[0][1]
+        for _, data, col in practice_data[1:]:
+            result = result.merge(data, left_on=practice_data[0][2], right_on=col, how='outer')
+        
+        result = result.fillna(0)
+        
+        # Calculate conversion rate
+        if 'leads' in result.columns and 'retained' in result.columns:
+            result['Conversion Rate'] = (result['retained'] / result['leads'] * 100).round(1)
+        else:
+            result['Conversion Rate'] = 0
+        
+        # Use the first practice area column name
+        practice_col_name = practice_data[0][2]
+        result['Practice Area'] = result[practice_col_name]
+        
+        # Calculate total cases
+        result['Cases'] = result['leads'] + result['retained']
+        
+        return result[['Practice Area', 'Cases', 'Conversion Rate']].sort_values('Cases', ascending=False)
     
     def _calculate_conversion_metrics(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
-        """Calculate conversion metrics for the given period"""
-        # This would calculate actual conversion metrics from the data
-        # For now, return sample data
+        """Calculate conversion metrics for the given period from actual data"""
+        # Load data if not already loaded
+        if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
+            data_manager.load_all_data()
+        
+        # Get date columns
+        leads_date_col = self._find_date_column(data_manager.df_leads)
+        ic_date_col = self._find_date_column(data_manager.df_ic)
+        dm_date_col = self._find_date_column(data_manager.df_dm)
+        ncl_date_col = self._find_date_column(data_manager.df_ncl)
+        
+        # Filter data by date range
+        leads_count = 0
+        if leads_date_col and not data_manager.df_leads.empty:
+            leads_mask = self._mask_by_range_dates(data_manager.df_leads, leads_date_col, start_date, end_date)
+            leads_count = leads_mask.sum()
+        
+        consultations_count = 0
+        if ic_date_col and not data_manager.df_ic.empty:
+            ic_mask = self._mask_by_range_dates(data_manager.df_ic, ic_date_col, start_date, end_date)
+            consultations_count = ic_mask.sum()
+        
+        discovery_count = 0
+        if dm_date_col and not data_manager.df_dm.empty:
+            dm_mask = self._mask_by_range_dates(data_manager.df_dm, dm_date_col, start_date, end_date)
+            discovery_count = dm_mask.sum()
+        
+        retained_count = 0
+        if ncl_date_col and not data_manager.df_ncl.empty:
+            ncl_mask = self._mask_by_range_dates(data_manager.df_ncl, ncl_date_col, start_date, end_date)
+            retained_count = ncl_mask.sum()
+        
+        # Calculate conversion rate
+        conversion_rate = (retained_count / leads_count * 100) if leads_count > 0 else 0
+        
         return {
-            'leads': 150,
-            'consultations': 45,
-            'discovery_meetings': 28,
-            'retained': 12,
-            'conversion_rate': 8.0
+            'leads': leads_count,
+            'consultations': consultations_count,
+            'discovery_meetings': discovery_count,
+            'retained': retained_count,
+            'conversion_rate': round(conversion_rate, 1)
         }
     
     def _get_practice_area_data(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
