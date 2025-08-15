@@ -754,6 +754,91 @@ class UIManager:
         
         return result
     
+    def _calculate_conversion_metrics(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
+        """Calculate conversion metrics for the given period from actual data"""
+        # Load data if not already loaded
+        if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
+            data_manager.load_all_data()
+        
+        # Get date columns
+        leads_date_col = self._find_date_column(data_manager.df_leads)
+        ic_date_col = self._find_date_column(data_manager.df_ic)
+        dm_date_col = self._find_date_column(data_manager.df_dm)
+        ncl_date_col = self._find_date_column(data_manager.df_ncl)
+        
+        # Filter data by date range
+        leads_count = 0
+        if leads_date_col and not data_manager.df_leads.empty:
+            leads_mask = self._mask_by_range_dates(data_manager.df_leads, leads_date_col, start_date, end_date)
+            leads_count = leads_mask.sum()
+        
+        consultations_count = 0
+        if ic_date_col and not data_manager.df_ic.empty:
+            ic_mask = self._mask_by_range_dates(data_manager.df_ic, ic_date_col, start_date, end_date)
+            consultations_count = ic_mask.sum()
+        
+        discovery_count = 0
+        if dm_date_col and not data_manager.df_dm.empty:
+            dm_mask = self._mask_by_range_dates(data_manager.df_dm, dm_date_col, start_date, end_date)
+            discovery_count = dm_mask.sum()
+        
+        retained_count = 0
+        if ncl_date_col and not data_manager.df_ncl.empty:
+            ncl_mask = self._mask_by_range_dates(data_manager.df_ncl, ncl_date_col, start_date, end_date)
+            retained_count = ncl_mask.sum()
+        
+        # Calculate conversion rate
+        conversion_rate = (retained_count / leads_count * 100) if leads_count > 0 else 0
+        
+        return {
+            'leads': leads_count,
+            'consultations': consultations_count,
+            'discovery_meetings': discovery_count,
+            'retained': retained_count,
+            'conversion_rate': round(conversion_rate, 1)
+        }
+    
+    def _find_date_column(self, df: pd.DataFrame) -> Optional[str]:
+        """Find the most likely date column in a dataframe"""
+        if df is None or df.empty:
+            return None
+        
+        date_candidates = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in ['date', 'created', 'updated', 'time']):
+                date_candidates.append(col)
+        
+        if date_candidates:
+            return date_candidates[0]
+        return None
+    
+    def _mask_by_range_dates(self, df: pd.DataFrame, date_col: str, start: date, end: date) -> pd.Series:
+        """Create mask for date range filtering with robust date parsing"""
+        if df is None or df.empty or date_col not in df.columns:
+            return pd.Series([False] * (0 if df is None else len(df)))
+        
+        # Use robust date parsing with format specification to avoid warnings
+        ts = pd.to_datetime(df[date_col], errors="coerce", format="mixed")
+        if ts.isna().any():
+            y = ts.copy()
+            for fmt in ("%m/%d/%Y %I:%M %p", "%m/%d/%Y %H:%M", "%Y-%m-%d %H:%M", "%m/%d/%Y"):
+                m = y.isna()
+                if not m.any(): 
+                    break
+                try:
+                    y.loc[m] = pd.to_datetime(df[date_col].loc[m], format=fmt, errors="coerce")
+                except Exception:
+                    pass
+            ts = y
+        
+        # Handle NaT values properly
+        valid_dates = ts.notna()
+        in_range = pd.Series([False] * len(df), index=df.index)
+        if valid_dates.any():
+            in_range.loc[valid_dates] = (ts.loc[valid_dates].dt.date >= start) & (ts.loc[valid_dates].dt.date <= end)
+        return in_range
+    
     def _get_practice_area_metrics_for_report(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
         """Get practice area metrics for the report"""
         # Load data if not already loaded
