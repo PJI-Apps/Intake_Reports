@@ -38,7 +38,7 @@ class UIManager:
         with st.sidebar.expander("📦 Master Data (Google Sheets) — Admin", expanded=False):
             if data_manager.gsheet is None:
                 st.warning("Not connected to the master store.")
-                st.caption("Add `[gcp_service_account]` and `[google_sheet]` to Secrets.")
+                st.caption("Add `[gcp_service_account]` and `[google_sheets]` to Secrets.")
                 if st.button("🧹 Master Reset (session & caches)", use_container_width=True):
                     for k in ["hashes_calls", "hashes_conv", "exp_upload_open", "logs"]:
                         st.session_state.pop(k, None)
@@ -610,5 +610,6 @@ class UIManager:
   <tbody>""" + trs + """</tbody>
 </table>"""
         st.markdown(html, unsafe_allow_html=True)
+
 
 
