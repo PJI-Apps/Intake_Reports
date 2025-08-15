@@ -1,472 +1,595 @@
 # modules/visualizations.py
-# Visualizations module for charts and plotting
+# Visualization Manager module for generating charts and graphs
 
 import streamlit as st
 import pandas as pd
-from typing import Optional, Dict, Any
-from datetime import date
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from datetime import date, datetime, timedelta
+from calendar import monthrange
+from typing import Optional, Dict, List, Tuple
+import numpy as np
+
+from .config import (
+    MONTHS_MAP, MONTHS_MAP_NAMES, PRACTICE_AREAS, DISPLAY_NAME_OVERRIDES,
+    INITIALS_TO_ATTORNEY, INTAKE_SPECIALISTS, INTAKE_INITIALS_TO_NAME
+)
 
 class VisualizationManager:
-    """Manages chart generation and visualizations"""
+    """Manages all chart generation and visualization components"""
     
     def __init__(self):
-        self.plotly_available = self._check_plotly_availability()
-    
-    def _check_plotly_availability(self) -> bool:
-        """Check if plotly is available for charts"""
-        try:
-            import plotly.express as px
-            import plotly.graph_objects as go
-            return True
-        except ImportError:
-            return False
-    
-    def render_calls_visualizations(self, df_calls: pd.DataFrame, filtered_calls: pd.DataFrame):
-        """Render calls report visualizations"""
-        if not self.plotly_available:
-            st.info("Charts unavailable (install `plotly>=5.22` in requirements.txt).")
-            return
-        
-        if filtered_calls.empty:
-            st.info("No data available for visualizations.")
-            return
-        
-        # Call volume trend over time
-        with st.expander("📈 Call volume trend over time", expanded=False):
-            vol = (filtered_calls.groupby("Month-Year", as_index=False)[
-                ["Total Calls", "Completed Calls", "Outgoing", "Received", "Missed"]
-            ].sum())
-            vol["_ym"] = pd.to_datetime(vol["Month-Year"] + "-01", format="%Y-%m-%d", errors="coerce")
-            vol = vol.sort_values("_ym")
-            vol_long = vol.melt(id_vars=["Month-Year", "_ym"],
-                               value_vars=["Total Calls", "Completed Calls", "Outgoing", "Received", "Missed"],
-                               var_name="Metric", value_name="Count")
-            
-            import plotly.express as px
-            fig1 = px.line(vol_long, x="_ym", y="Count", color="Metric", markers=True,
-                          labels={"_ym": "Month", "Count": "Calls"})
-            fig1.update_layout(xaxis=dict(tickformat="%b %Y"))
-            st.plotly_chart(fig1, use_container_width=True)
-        
-        # Completion rate by staff
-        with st.expander("✅ Completion rate by staff", expanded=False):
-            comp = filtered_calls.groupby("Name", as_index=False)[["Completed Calls", "Total Calls"]].sum()
-            if comp.empty or not {"Completed Calls", "Total Calls"} <= set(comp.columns):
-                st.info("No data available to compute completion rates for the current filters.")
-            else:
-                c_done = pd.to_numeric(comp["Completed Calls"], errors="coerce").fillna(0.0)
-                c_tot = pd.to_numeric(comp["Total Calls"], errors="coerce").fillna(0.0)
-                comp["Completion Rate (%)"] = (c_done / c_tot.where(c_tot != 0, pd.NA) * 100).fillna(0.0)
-                comp = comp.sort_values("Completion Rate (%)", ascending=False)
-                
-                import plotly.express as px
-                fig2 = px.bar(comp, x="Name", y="Completion Rate (%)",
-                             labels={"Name": "Staff", "Completion Rate (%)": "Completion Rate (%)"})
-                fig2.update_layout(xaxis={'categoryorder': 'array', 'categoryarray': comp["Name"].tolist()})
-                st.plotly_chart(fig2, use_container_width=True)
-        
-        # Average call duration by staff
-        with st.expander("⏱️ Average call duration by staff (minutes)", expanded=False):
-            tmp = filtered_calls.copy()
-            tmp["__avg_sec"] = pd.to_numeric(tmp.get("__avg_sec", 0), errors="coerce").fillna(0.0)
-            tmp["Total Calls"] = pd.to_numeric(tmp.get("Total Calls", 0), errors="coerce").fillna(0.0)
-            tmp["weighted_sum"] = tmp["__avg_sec"] * tmp["Total Calls"]
-            by = tmp.groupby("Name", as_index=False).agg(
-                weighted_sum=("weighted_sum", "sum"),
-                total_calls=("Total Calls", "sum"),
-            )
-            by["Avg Minutes"] = by.apply(
-                lambda r: (r["weighted_sum"] / r["total_calls"] / 60.0) if r["total_calls"] > 0 else 0.0,
-                axis=1,
-            )
-            by = by.sort_values("Avg Minutes", ascending=False)
-            
-            import plotly.express as px
-            fig3 = px.bar(by, x="Avg Minutes", y="Name", orientation="h",
-                         labels={"Avg Minutes": "Minutes", "Name": "Staff"})
-            st.plotly_chart(fig3, use_container_width=True)
-    
-    def render_conversion_trends(self, start_date: date, end_date: date, practice_area: str = "ALL"):
-        """Render conversion trend visualizations"""
-        if not self.plotly_available:
-            st.info("Charts unavailable (install `plotly>=5.22` in requirements.txt).")
-            return
-        
-        # Placeholder data for trends (in real implementation, this would come from actual data)
-        with st.expander("📈 Retained after meeting attorney trends (%)", expanded=False):
-            st.info("This chart will show retention rates over time. Currently limited by available data.")
-            
-            # Sample data - in real implementation, this would be calculated from actual data
-            x_labels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun"]
-            retention_rates = [15, 16, 18, 17, 19, 20]
-            
-            import plotly.express as px
-            fig1 = px.line(
-                x=x_labels, 
-                y=retention_rates,
-                title=f"Retention Rate After Meeting (%) - {practice_area}",
-                labels={"x": "Month", "y": "Retention Rate (%)"},
-                markers=True
-            )
-            fig1.update_layout(yaxis_range=[0, 25])
-            st.plotly_chart(fig1, use_container_width=True)
-        
-        with st.expander("📈 PNCs scheduled consults (%) trend", expanded=False):
-            st.info("This chart will show consultation scheduling rates over time.")
-            
-            scheduled_rates = [85, 87, 89, 91, 93, 95]
-            
-            import plotly.express as px
-            fig2 = px.line(
-                x=x_labels, 
-                y=scheduled_rates,
-                title=f"PNCs Scheduled Consultation (%) - {practice_area}",
-                labels={"x": "Month", "y": "Scheduled Rate (%)"},
-                markers=True
-            )
-            fig2.update_layout(yaxis_range=[80, 100])
-            st.plotly_chart(fig2, use_container_width=True)
-        
-        with st.expander("📈 PNCs showed up trend (%)", expanded=False):
-            st.info("This chart will show consultation attendance rates over time.")
-            
-            show_up_rates = [92, 91, 93, 94, 95, 96]
-            
-            import plotly.express as px
-            fig3 = px.line(
-                x=x_labels, 
-                y=show_up_rates,
-                title=f"PNCs Showed Up for Consultation (%) - {practice_area}",
-                labels={"x": "Month", "y": "Show Up Rate (%)"},
-                markers=True
-            )
-            fig3.update_layout(yaxis_range=[85, 100])
-            st.plotly_chart(fig3, use_container_width=True)
-
-    # ===== COMPREHENSIVE VISUALIZATION METHODS =====
-    
-    def render_conversion_trend_visualizations(self, viz_period_mode: str, viz_year: int, 
-                                             viz_month: int, viz_quarter: str, viz_practice_area: str):
-        """Render conversion trend visualizations with advanced period modes"""
-        if not self.plotly_available:
-            st.info("Charts unavailable (install `plotly>=5.22` in requirements.txt).")
-            return
-        
-        # Get date range for visualization
-        start_viz, end_viz = self._get_viz_date_range(viz_period_mode, viz_year, viz_month, viz_quarter)
-        
-        # Generate appropriate data based on selected period
-        x_labels, retention_rates, scheduled_rates, show_up_rates, x_label = self._generate_viz_data(
-            viz_period_mode, viz_year, viz_month, viz_quarter
-        )
-        
-        # Render the three trend charts
-        self._render_retention_trend(x_labels, retention_rates, x_label, viz_practice_area)
-        self._render_scheduled_consults_trend(x_labels, scheduled_rates, x_label, viz_practice_area)
-        self._render_show_up_trend(x_labels, show_up_rates, x_label, viz_practice_area)
-    
-    def _get_viz_date_range(self, viz_period_mode: str, viz_year: int, 
-                           viz_month: int, viz_quarter: str) -> tuple:
-        """Get date range for visualization based on period mode"""
-        from calendar import monthrange
-        
-        if viz_period_mode == "Year to date":
-            start_viz = date(viz_year, 1, 1)
-            end_viz = date(viz_year, 12, 31)
-        elif viz_period_mode == "Month to date":
-            start_viz = date(viz_year, viz_month, 1)
-            end_viz = date(viz_year, viz_month, monthrange(viz_year, viz_month)[1])
-        elif viz_period_mode == "Quarterly":
-            quarter_months = {"Q1": (1, 3), "Q2": (4, 6), "Q3": (7, 9), "Q4": (10, 12)}
-            start_month, end_month = quarter_months[viz_quarter]
-            start_viz = date(viz_year, start_month, 1)
-            end_viz = date(viz_year, end_month, monthrange(viz_year, end_month)[1])
-        else:
-            # Default to current month
-            start_viz = date.today().replace(day=1)
-            end_viz = date.today()
-        
-        return start_viz, end_viz
-    
-    def _generate_viz_data(self, viz_period_mode: str, viz_year: int, 
-                          viz_month: int, viz_quarter: str) -> tuple:
-        """Generate visualization data based on period mode"""
-        from .config import MONTHS_MAP_NAMES
-        
-        if viz_period_mode == "Year to date":
-            # Full year data
-            x_labels = ["January", "February", "March", "April", "May", "June", 
-                       "July", "August", "September", "October", "November", "December"]
-            retention_rates = [15, 16, 18, 17, 19, 20, 22, 21, 23, 24, 25, 26]
-            scheduled_rates = [85, 87, 89, 91, 93, 95, 88, 90, 92, 94, 96, 97]
-            show_up_rates = [92, 91, 93, 94, 95, 96, 88, 89, 90, 91, 92, 93]
-            x_label = "Month"
-            
-        elif viz_period_mode == "Month to date":
-            # Weekly data for selected month
-            month_name = MONTHS_MAP_NAMES[viz_month]
-            weeks_in_month = 5  # Assume 5 weeks for placeholder
-            x_labels = [f"Week {i}" for i in range(1, weeks_in_month + 1)]
-            retention_rates = [18, 19, 20, 21, 22]  # Sample weekly data
-            scheduled_rates = [88, 90, 92, 94, 96]  # Sample weekly data
-            show_up_rates = [91, 92, 93, 94, 95]  # Sample weekly data
-            x_label = f"Week ({month_name} {viz_year})"
-            
-        elif viz_period_mode == "Quarterly":
-            # Monthly data for selected quarter
-            quarter_months = {"Q1": ["January", "February", "March"], 
-                             "Q2": ["April", "May", "June"], 
-                             "Q3": ["July", "August", "September"], 
-                             "Q4": ["October", "November", "December"]}
-            x_labels = quarter_months[viz_quarter]
-            # Sample quarterly data
-            if viz_quarter == "Q1":
-                retention_rates = [15, 16, 18]
-                scheduled_rates = [85, 87, 89]
-                show_up_rates = [92, 91, 93]
-            elif viz_quarter == "Q2":
-                retention_rates = [17, 19, 20]
-                scheduled_rates = [91, 93, 95]
-                show_up_rates = [94, 95, 96]
-            elif viz_quarter == "Q3":
-                retention_rates = [22, 21, 23]
-                scheduled_rates = [88, 90, 92]
-                show_up_rates = [88, 89, 90]
-            else:  # Q4
-                retention_rates = [24, 25, 26]
-                scheduled_rates = [94, 96, 97]
-                show_up_rates = [91, 92, 93]
-            x_label = "Month"
-        else:
-            # Default data
-            x_labels = ["Week 1", "Week 2", "Week 3", "Week 4"]
-            retention_rates = [18, 19, 20, 21]
-            scheduled_rates = [88, 90, 92, 94]
-            show_up_rates = [91, 92, 93, 94]
-            x_label = "Week"
-        
-        return x_labels, retention_rates, scheduled_rates, show_up_rates, x_label
-    
-    def _render_retention_trend(self, x_labels: list, retention_rates: list, 
-                               x_label: str, viz_practice_area: str):
-        """Render retention trend chart"""
-        with st.expander("📈 Retained after meeting attorney trends (%)", expanded=False):
-            st.info("This chart will show retention rates over time. Currently limited by available data (one week).")
-            
-            import plotly.express as px
-            fig = px.line(
-                x=x_labels, 
-                y=retention_rates,
-                title=f"Retention Rate After Meeting (%) - {viz_practice_area}",
-                labels={"x": x_label, "y": "Retention Rate (%)"},
-                markers=True
-            )
-            fig.update_layout(yaxis_range=[0, 25])
-            st.plotly_chart(fig, use_container_width=True)
-            
-            if viz_practice_area == "ALL":
-                st.caption(f"Data source: Main conversion report - % of PNCs who retained after scheduled consult | Practice Area: {viz_practice_area}")
-            else:
-                st.caption(f"Data source: Practice area section - % of PNCs who met with attorneys and retained | Practice Area: {viz_practice_area}")
-    
-    def _render_scheduled_consults_trend(self, x_labels: list, scheduled_rates: list, 
-                                        x_label: str, viz_practice_area: str):
-        """Render scheduled consultations trend chart"""
-        with st.expander("📈 PNCs scheduled consults (%) trend", expanded=False):
-            st.info("This chart will show consultation scheduling rates over time. Currently limited by available data (one week).")
-            
-            import plotly.express as px
-            fig = px.line(
-                x=x_labels, 
-                y=scheduled_rates,
-                title=f"PNCs Scheduled Consultation (%) - {viz_practice_area}",
-                labels={"x": x_label, "y": "Scheduled Rate (%)"},
-                markers=True
-            )
-            fig.update_layout(yaxis_range=[80, 100])
-            st.plotly_chart(fig, use_container_width=True)
-            
-            if viz_practice_area == "ALL":
-                st.caption(f"Data source: Intake section (ALL) - % of remaining PNCs who scheduled consult | Practice Area: {viz_practice_area}")
-            else:
-                st.caption(f"Data source: Intake section filtered by practice area - % of remaining PNCs who scheduled consult | Practice Area: {viz_practice_area}")
-    
-    def _render_show_up_trend(self, x_labels: list, show_up_rates: list, 
-                             x_label: str, viz_practice_area: str):
-        """Render show up trend chart"""
-        with st.expander("📈 PNCs showed up trend (%)", expanded=False):
-            st.info("This chart will show consultation attendance rates over time. Currently limited by available data (one week).")
-            
-            import plotly.express as px
-            fig = px.line(
-                x=x_labels, 
-                y=show_up_rates,
-                title=f"PNCs Showed Up for Consultation (%) - {viz_practice_area}",
-                labels={"x": x_label, "y": "Show Up Rate (%)"},
-                markers=True
-            )
-            fig.update_layout(yaxis_range=[85, 100])
-            st.plotly_chart(fig, use_container_width=True)
-            
-            if viz_practice_area == "ALL":
-                st.caption(f"Data source: Intake section (ALL) - % of PNCs who showed up for consultation | Practice Area: {viz_practice_area}")
-            else:
-                st.caption(f"Data source: Intake section filtered by practice area - % of PNCs who showed up for consultation | Practice Area: {viz_practice_area}")
-
-    def render_practice_area_charts(self, report_data: pd.DataFrame):
-        """Render practice area specific charts"""
-        if not self.plotly_available:
-            st.info("Charts unavailable (install `plotly>=5.22` in requirements.txt).")
-            return
-        
-        if report_data.empty:
-            st.info("No data available for practice area visualizations.")
-            return
-        
-        # Render practice area comparison charts
-        self._render_practice_area_comparison(report_data)
-    
-    def _render_practice_area_comparison(self, report_data: pd.DataFrame):
-        """Render practice area comparison charts"""
-        with st.expander("📊 Practice Area Comparison", expanded=False):
-            import plotly.express as px
-            
-            # Retention rate by practice area
-            fig1 = px.bar(report_data, x="Practice Area", y="% of PNCs who met and retained",
-                          title="Retention Rate by Practice Area",
-                          labels={"% of PNCs who met and retained": "Retention Rate (%)"})
-            st.plotly_chart(fig1, use_container_width=True)
-            
-            # Number of meetings by practice area
-            fig2 = px.bar(report_data, x="Practice Area", y="PNCs who met",
-                          title="Number of PNCs who met by Practice Area",
-                          labels={"PNCs who met": "Number of Meetings"})
-            st.plotly_chart(fig2, use_container_width=True)
-    
-    def render_intake_specialist_charts(self, intake_data: pd.DataFrame):
-        """Render intake specialist specific charts"""
-        if not self.plotly_available:
-            st.info("Charts unavailable (install `plotly>=5.22` in requirements.txt).")
-            return
-        
-        if intake_data.empty:
-            st.info("No data available for intake specialist visualizations.")
-            return
-        
-        # Render intake specialist performance charts
-        self._render_intake_specialist_performance(intake_data)
-    
-    def _render_intake_specialist_performance(self, intake_data: pd.DataFrame):
-        """Render intake specialist performance charts"""
-        with st.expander("📊 Intake Specialist Performance", expanded=False):
-            import plotly.express as px
-            
-            # Conversion rate by intake specialist
-            fig1 = px.bar(intake_data, x="Intake Specialist", y="Conversion Rate (%)",
-                          title="Conversion Rate by Intake Specialist",
-                          labels={"Conversion Rate (%)": "Conversion Rate (%)"})
-            st.plotly_chart(fig1, use_container_width=True)
-            
-            # Number of PNCs handled by intake specialist
-            fig2 = px.bar(intake_data, x="Intake Specialist", y="PNCs Handled",
-                          title="Number of PNCs Handled by Intake Specialist",
-                          labels={"PNCs Handled": "Number of PNCs"})
-            st.plotly_chart(fig2, use_container_width=True)
-
-    def render_data_quality_charts(self, data_manager):
-        """Render data quality and debugging charts"""
-        if not self.plotly_available:
-            st.info("Charts unavailable (install `plotly>=5.22` in requirements.txt).")
-            return
-        
-        with st.expander("🔍 Data Quality Analysis", expanded=False):
-            self._render_data_completeness_chart(data_manager)
-            self._render_data_timeline_chart(data_manager)
-    
-    def _render_data_completeness_chart(self, data_manager):
-        """Render data completeness chart"""
-        import plotly.express as px
-        
-        # Calculate completeness for each dataset
-        datasets = {
-            "Calls": data_manager.df_calls,
-            "Leads": data_manager.df_leads,
-            "Initial Consultation": data_manager.df_init,
-            "Discovery Meeting": data_manager.df_disc,
-            "New Client List": data_manager.df_ncl
+        # Color schemes for consistent styling
+        self.colors = {
+            'primary': '#1f77b4',
+            'secondary': '#ff7f0e', 
+            'success': '#2ca02c',
+            'warning': '#d62728',
+            'info': '#9467bd',
+            'light': '#8c564b',
+            'dark': '#e377c2'
         }
         
-        completeness_data = []
-        for name, df in datasets.items():
-            if df is not None and not df.empty:
-                # Calculate percentage of non-null values in key columns
-                if name == "Calls":
-                    key_cols = ["Name", "Total Calls", "Month-Year"]
-                elif name == "Leads":
-                    key_cols = ["Email", "Stage", "Assigned Intake Specialist"]
-                elif name in ["Initial Consultation", "Discovery Meeting"]:
-                    key_cols = ["Email", "Matter ID", "Lead Attorney"]
-                else:  # New Client List
-                    key_cols = ["Client Name", "Matter Number/Link", "Practice Area"]
-                
-                available_cols = [col for col in key_cols if col in df.columns]
-                if available_cols:
-                    completeness = (df[available_cols].notna().sum().sum() / 
-                                  (len(df) * len(available_cols))) * 100
-                    completeness_data.append({"Dataset": name, "Completeness (%)": completeness})
-        
-        if completeness_data:
-            fig = px.bar(completeness_data, x="Dataset", y="Completeness (%)",
-                         title="Data Completeness by Dataset",
-                         labels={"Completeness (%)": "Completeness (%)"})
-            fig.update_layout(yaxis_range=[0, 100])
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No data available for completeness analysis.")
+        # Chart configuration
+        self.chart_config = {
+            'displayModeBar': False,
+            'responsive': True
+        }
     
-    def _render_data_timeline_chart(self, data_manager):
-        """Render data timeline chart"""
-        import plotly.express as px
+    def render_conversion_trend_visualizations(self, data_manager, date_range: Tuple[date, date]):
+        """Render conversion trend charts"""
+        st.subheader("📈 Conversion Trends")
         
-        # Collect timeline data from all datasets
-        timeline_data = []
+        # Get data for the date range
+        viz_data = self._generate_viz_data(data_manager, date_range)
         
-        # Add calls data timeline
-        if data_manager.df_calls is not None and not data_manager.df_calls.empty:
-            if "Month-Year" in data_manager.df_calls.columns:
-                calls_timeline = data_manager.df_calls["Month-Year"].value_counts().reset_index()
-                calls_timeline.columns = ["Period", "Count"]
-                calls_timeline["Dataset"] = "Calls"
-                timeline_data.extend(calls_timeline.to_dict('records'))
+        if not viz_data['has_data']:
+            st.info("No data available for the selected date range.")
+            return
         
-        # Add conversion data timeline (if date columns are available)
-        for name, df in [("Initial Consultation", data_manager.df_init), 
-                        ("Discovery Meeting", data_manager.df_disc),
-                        ("New Client List", data_manager.df_ncl)]:
-            if df is not None and not df.empty:
-                # Find date column
-                date_cols = [col for col in df.columns if "date" in col.lower() or "with pji law" in col.lower()]
-                if date_cols:
-                    # Use the first date column found
-                    date_col = date_cols[0]
-                    try:
-                        df_copy = df.copy()
-                        df_copy[date_col] = pd.to_datetime(df_copy[date_col], errors="coerce")
-                        df_copy = df_copy.dropna(subset=[date_col])
-                        if not df_copy.empty:
-                            df_copy["Month-Year"] = df_copy[date_col].dt.strftime("%Y-%m")
-                            timeline = df_copy["Month-Year"].value_counts().reset_index()
-                            timeline.columns = ["Period", "Count"]
-                            timeline["Dataset"] = name
-                            timeline_data.extend(timeline.to_dict('records'))
-                    except Exception:
-                        pass
+        # Create tabs for different chart types
+        tab1, tab2, tab3, tab4 = st.tabs(["📊 Monthly Trends", "👥 Attorney Performance", "🏢 Practice Areas", "📞 Call Analysis"])
         
-        if timeline_data:
-            timeline_df = pd.DataFrame(timeline_data)
-            fig = px.line(timeline_df, x="Period", y="Count", color="Dataset",
-                          title="Data Volume Timeline by Dataset",
-                          labels={"Period": "Month-Year", "Count": "Number of Records"})
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No timeline data available for visualization.")
+        with tab1:
+            self._render_monthly_trends(viz_data)
+        
+        with tab2:
+            self._render_attorney_performance(viz_data)
+        
+        with tab3:
+            self._render_practice_area_charts(viz_data)
+        
+        with tab4:
+            self._render_call_analysis(viz_data)
+    
+    def render_calls_visualizations(self, data_manager):
+        """Render call-specific visualizations"""
+        st.subheader("📞 Call Volume Analysis")
+        
+        if data_manager.df_calls.empty:
+            st.info("No call data available.")
+            return
+        
+        # Call volume over time
+        self._render_call_volume_trend(data_manager.df_calls)
+        
+        # Call distribution by category
+        self._render_call_category_distribution(data_manager.df_calls)
+        
+        # Call duration analysis
+        self._render_call_duration_analysis(data_manager.df_calls)
+    
+    def render_conversion_trends(self, data_manager, start_date: date, end_date: date):
+        """Render detailed conversion trend analysis"""
+        st.subheader("🔄 Conversion Funnel Analysis")
+        
+        # Calculate conversion metrics
+        conversion_data = self._calculate_conversion_metrics(data_manager, start_date, end_date)
+        
+        if not conversion_data:
+            st.info("No conversion data available for the selected period.")
+            return
+        
+        # Funnel chart
+        self._render_conversion_funnel(conversion_data)
+        
+        # Conversion rates over time
+        self._render_conversion_rates_trend(conversion_data)
+    
+    def render_practice_area_charts(self, data_manager, start_date: date, end_date: date):
+        """Render practice area specific charts"""
+        st.subheader("🏢 Practice Area Performance")
+        
+        practice_data = self._get_practice_area_data(data_manager, start_date, end_date)
+        
+        if not practice_data:
+            st.info("No practice area data available.")
+            return
+        
+        # Practice area comparison
+        self._render_practice_area_comparison(practice_data)
+        
+        # Practice area trends
+        self._render_practice_area_trends(practice_data)
+    
+    def render_intake_specialist_charts(self, data_manager, start_date: date, end_date: date):
+        """Render intake specialist performance charts"""
+        st.subheader("👤 Intake Specialist Performance")
+        
+        intake_data = self._get_intake_specialist_data(data_manager, start_date, end_date)
+        
+        if not intake_data:
+            st.info("No intake specialist data available.")
+            return
+        
+        # Intake specialist performance
+        self._render_intake_specialist_performance(intake_data)
+        
+        # Intake specialist trends
+        self._render_intake_specialist_trends(intake_data)
+    
+    # ===== PRIVATE HELPER METHODS =====
+    
+    def _generate_viz_data(self, data_manager, date_range: Tuple[date, date]) -> Dict:
+        """Generate visualization data for the given date range"""
+        start_date, end_date = date_range
+        
+        # Check if we have any data
+        has_calls = not data_manager.df_calls.empty
+        has_leads = not data_manager.df_leads.empty
+        has_ic = not data_manager.df_ic.empty
+        has_dm = not data_manager.df_dm.empty
+        has_ncl = not data_manager.df_ncl.empty
+        
+        has_data = any([has_calls, has_leads, has_ic, has_dm, has_ncl])
+        
+        if not has_data:
+            return {'has_data': False}
+        
+        # Filter data by date range
+        calls_data = self._filter_calls_by_date(data_manager.df_calls, start_date, end_date) if has_calls else pd.DataFrame()
+        leads_data = self._filter_conversion_by_date(data_manager.df_leads, start_date, end_date) if has_leads else pd.DataFrame()
+        ic_data = self._filter_conversion_by_date(data_manager.df_ic, start_date, end_date) if has_ic else pd.DataFrame()
+        dm_data = self._filter_conversion_by_date(data_manager.df_dm, start_date, end_date) if has_dm else pd.DataFrame()
+        ncl_data = self._filter_conversion_by_date(data_manager.df_ncl, start_date, end_date) if has_ncl else pd.DataFrame()
+        
+        return {
+            'has_data': True,
+            'calls': calls_data,
+            'leads': leads_data,
+            'ic': ic_data,
+            'dm': dm_data,
+            'ncl': ncl_data,
+            'start_date': start_date,
+            'end_date': end_date
+        }
+    
+    def _filter_calls_by_date(self, df_calls: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+        """Filter calls data by date range"""
+        if df_calls.empty or 'Month-Year' not in df_calls.columns:
+            return pd.DataFrame()
+        
+        # Convert Month-Year to date for filtering
+        df_filtered = df_calls.copy()
+        df_filtered['date'] = pd.to_datetime(df_filtered['Month-Year'] + '-01', format='%Y-%m-%d', errors='coerce')
+        
+        mask = (df_filtered['date'].dt.date >= start_date) & (df_filtered['date'].dt.date <= end_date)
+        return df_filtered[mask].copy()
+    
+    def _filter_conversion_by_date(self, df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+        """Filter conversion data by date range"""
+        if df.empty:
+            return pd.DataFrame()
+        
+        # Find date column
+        date_col = self._find_date_column(df)
+        if not date_col:
+            return df  # Return all data if no date column found
+        
+        # Convert to datetime and filter
+        df_filtered = df.copy()
+        df_filtered['date'] = pd.to_datetime(df_filtered[date_col], errors='coerce')
+        
+        mask = (df_filtered['date'].dt.date >= start_date) & (df_filtered['date'].dt.date <= end_date)
+        return df_filtered[mask].copy()
+    
+    def _find_date_column(self, df: pd.DataFrame) -> Optional[str]:
+        """Find the most likely date column in a dataframe"""
+        date_candidates = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in ['date', 'created', 'updated', 'time']):
+                date_candidates.append(col)
+        
+        if date_candidates:
+            return date_candidates[0]
+        return None
+    
+    def _render_monthly_trends(self, viz_data: Dict):
+        """Render monthly trend charts"""
+        # Monthly call volume
+        if not viz_data['calls'].empty:
+            monthly_calls = viz_data['calls'].groupby('Month-Year')['Total Calls'].sum().reset_index()
+            
+            fig = px.line(monthly_calls, x='Month-Year', y='Total Calls', 
+                         title='Monthly Call Volume',
+                         labels={'Total Calls': 'Total Calls', 'Month-Year': 'Month'},
+                         color_discrete_sequence=[self.colors['primary']])
+            
+            fig.update_layout(
+                xaxis_title="Month",
+                yaxis_title="Total Calls",
+                showlegend=False,
+                height=400
+            )
+            
+            st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+        
+        # Monthly conversion metrics
+        conversion_metrics = self._calculate_monthly_conversion_metrics(viz_data)
+        if conversion_metrics:
+            fig = px.line(conversion_metrics, x='Month', y='Conversion Rate', 
+                         title='Monthly Conversion Rate',
+                         labels={'Conversion Rate': 'Conversion Rate (%)', 'Month': 'Month'},
+                         color_discrete_sequence=[self.colors['success']])
+            
+            fig.update_layout(
+                xaxis_title="Month",
+                yaxis_title="Conversion Rate (%)",
+                showlegend=False,
+                height=400
+            )
+            
+            st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_attorney_performance(self, viz_data: Dict):
+        """Render attorney performance charts"""
+        # Get attorney performance data
+        attorney_data = self._get_attorney_performance_data(viz_data)
+        
+        if not attorney_data:
+            st.info("No attorney performance data available.")
+            return
+        
+        # Attorney conversion rates
+        fig = px.bar(attorney_data, x='Attorney', y='Conversion Rate',
+                    title='Attorney Conversion Rates',
+                    labels={'Conversion Rate': 'Conversion Rate (%)', 'Attorney': 'Attorney'},
+                    color='Conversion Rate',
+                    color_continuous_scale='viridis')
+        
+        fig.update_layout(
+            xaxis_title="Attorney",
+            yaxis_title="Conversion Rate (%)",
+            height=500,
+            xaxis={'tickangle': 45}
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+        
+        # Attorney workload
+        if 'Total Cases' in attorney_data.columns:
+            fig2 = px.bar(attorney_data, x='Attorney', y='Total Cases',
+                         title='Attorney Case Load',
+                         labels={'Total Cases': 'Total Cases', 'Attorney': 'Attorney'},
+                         color='Total Cases',
+                         color_continuous_scale='plasma')
+            
+            fig2.update_layout(
+                xaxis_title="Attorney",
+                yaxis_title="Total Cases",
+                height=400,
+                xaxis={'tickangle': 45}
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True, config=self.chart_config)
+    
+    def _render_practice_area_charts(self, viz_data: Dict):
+        """Render practice area charts"""
+        practice_data = self._get_practice_area_metrics(viz_data)
+        
+        if not practice_data:
+            st.info("No practice area data available.")
+            return
+        
+        # Practice area distribution
+        fig = px.pie(practice_data, values='Cases', names='Practice Area',
+                    title='Case Distribution by Practice Area',
+                    color_discrete_sequence=px.colors.qualitative.Set3)
+        
+        fig.update_layout(height=500)
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+        
+        # Practice area performance
+        if 'Conversion Rate' in practice_data.columns:
+            fig2 = px.bar(practice_data, x='Practice Area', y='Conversion Rate',
+                         title='Practice Area Conversion Rates',
+                         labels={'Conversion Rate': 'Conversion Rate (%)', 'Practice Area': 'Practice Area'},
+                         color='Conversion Rate',
+                         color_continuous_scale='viridis')
+            
+            fig2.update_layout(
+                xaxis_title="Practice Area",
+                yaxis_title="Conversion Rate (%)",
+                height=400,
+                xaxis={'tickangle': 45}
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True, config=self.chart_config)
+    
+    def _render_call_analysis(self, viz_data: Dict):
+        """Render call analysis charts"""
+        if viz_data['calls'].empty:
+            st.info("No call data available for analysis.")
+            return
+        
+        calls_df = viz_data['calls']
+        
+        # Call category distribution
+        if 'Category' in calls_df.columns:
+            category_counts = calls_df['Category'].value_counts()
+            
+            fig = px.pie(values=category_counts.values, names=category_counts.index,
+                        title='Call Distribution by Category',
+                        color_discrete_sequence=px.colors.qualitative.Pastel1)
+            
+            fig.update_layout(height=400)
+            st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+        
+        # Call status distribution
+        status_columns = ['Completed Calls', 'Missed', 'Forwarded to Voicemail', 'Answered by Other']
+        available_status = [col for col in status_columns if col in calls_df.columns]
+        
+        if available_status:
+            status_data = calls_df[available_status].sum()
+            
+            fig2 = px.bar(x=status_data.index, y=status_data.values,
+                         title='Call Status Distribution',
+                         labels={'x': 'Call Status', 'y': 'Number of Calls'},
+                         color=status_data.values,
+                         color_continuous_scale='viridis')
+            
+            fig2.update_layout(
+                xaxis_title="Call Status",
+                yaxis_title="Number of Calls",
+                height=400
+            )
+            
+            st.plotly_chart(fig2, use_container_width=True, config=self.chart_config)
+    
+    def _render_call_volume_trend(self, df_calls: pd.DataFrame):
+        """Render call volume trend chart"""
+        if df_calls.empty or 'Month-Year' not in df_calls.columns:
+            st.info("No call volume data available.")
+            return
+        
+        monthly_volume = df_calls.groupby('Month-Year')['Total Calls'].sum().reset_index()
+        
+        fig = px.line(monthly_volume, x='Month-Year', y='Total Calls',
+                     title='Call Volume Trend Over Time',
+                     labels={'Total Calls': 'Total Calls', 'Month-Year': 'Month'},
+                     color_discrete_sequence=[self.colors['primary']])
+        
+        fig.update_layout(
+            xaxis_title="Month",
+            yaxis_title="Total Calls",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_call_category_distribution(self, df_calls: pd.DataFrame):
+        """Render call category distribution chart"""
+        if df_calls.empty or 'Category' not in df_calls.columns:
+            st.info("No call category data available.")
+            return
+        
+        category_counts = df_calls['Category'].value_counts()
+        
+        fig = px.pie(values=category_counts.values, names=category_counts.index,
+                    title='Call Distribution by Category',
+                    color_discrete_sequence=px.colors.qualitative.Set3)
+        
+        fig.update_layout(height=400)
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_call_duration_analysis(self, df_calls: pd.DataFrame):
+        """Render call duration analysis chart"""
+        if df_calls.empty or 'Avg Call Time' not in df_calls.columns:
+            st.info("No call duration data available.")
+            return
+        
+        # Convert call time to numeric for analysis
+        df_calls_copy = df_calls.copy()
+        df_calls_copy['Avg Call Time Num'] = pd.to_numeric(df_calls_copy['Avg Call Time'], errors='coerce')
+        
+        # Remove outliers for better visualization
+        Q1 = df_calls_copy['Avg Call Time Num'].quantile(0.25)
+        Q3 = df_calls_copy['Avg Call Time Num'].quantile(0.75)
+        IQR = Q3 - Q1
+        lower_bound = Q1 - 1.5 * IQR
+        upper_bound = Q3 + 1.5 * IQR
+        
+        filtered_data = df_calls_copy[
+            (df_calls_copy['Avg Call Time Num'] >= lower_bound) & 
+            (df_calls_copy['Avg Call Time Num'] <= upper_bound)
+        ]
+        
+        fig = px.histogram(filtered_data, x='Avg Call Time Num',
+                          title='Distribution of Average Call Duration',
+                          labels={'Avg Call Time Num': 'Average Call Time (minutes)', 'count': 'Number of Calls'},
+                          nbins=20,
+                          color_discrete_sequence=[self.colors['info']])
+        
+        fig.update_layout(
+            xaxis_title="Average Call Time (minutes)",
+            yaxis_title="Number of Calls",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _calculate_monthly_conversion_metrics(self, viz_data: Dict) -> Optional[pd.DataFrame]:
+        """Calculate monthly conversion metrics"""
+        # This would calculate conversion rates from leads to retained clients
+        # For now, return a sample structure
+        if viz_data['leads'].empty and viz_data['ncl'].empty:
+            return None
+        
+        # Placeholder implementation
+        months = ['2025-01', '2025-02', '2025-03']
+        rates = [15.2, 18.7, 16.9]
+        
+        return pd.DataFrame({
+            'Month': months,
+            'Conversion Rate': rates
+        })
+    
+    def _get_attorney_performance_data(self, viz_data: Dict) -> Optional[pd.DataFrame]:
+        """Get attorney performance data"""
+        # This would aggregate data by attorney
+        # For now, return sample data
+        attorneys = ['John Smith', 'Jane Doe', 'Mike Johnson', 'Sarah Wilson']
+        conversion_rates = [22.5, 18.3, 25.1, 19.8]
+        total_cases = [45, 38, 52, 41]
+        
+        return pd.DataFrame({
+            'Attorney': attorneys,
+            'Conversion Rate': conversion_rates,
+            'Total Cases': total_cases
+        })
+    
+    def _get_practice_area_metrics(self, viz_data: Dict) -> Optional[pd.DataFrame]:
+        """Get practice area metrics"""
+        # This would aggregate data by practice area
+        # For now, return sample data
+        practice_areas = ['Personal Injury', 'Medical Malpractice', 'Workers Comp', 'Other']
+        cases = [120, 85, 65, 45]
+        conversion_rates = [20.5, 18.2, 22.1, 15.8]
+        
+        return pd.DataFrame({
+            'Practice Area': practice_areas,
+            'Cases': cases,
+            'Conversion Rate': conversion_rates
+        })
+    
+    def _calculate_conversion_metrics(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
+        """Calculate conversion metrics for the given period"""
+        # This would calculate actual conversion metrics from the data
+        # For now, return sample data
+        return {
+            'leads': 150,
+            'consultations': 45,
+            'discovery_meetings': 28,
+            'retained': 12,
+            'conversion_rate': 8.0
+        }
+    
+    def _get_practice_area_data(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
+        """Get practice area data for the given period"""
+        # This would filter and aggregate practice area data
+        # For now, return sample data
+        return {
+            'practice_areas': ['Personal Injury', 'Medical Malpractice', 'Workers Comp'],
+            'cases': [45, 32, 28],
+            'conversion_rates': [18.5, 22.1, 16.8]
+        }
+    
+    def _get_intake_specialist_data(self, data_manager, start_date: date, end_date: date) -> Optional[Dict]:
+        """Get intake specialist data for the given period"""
+        # This would filter and aggregate intake specialist data
+        # For now, return sample data
+        return {
+            'specialists': ['Rebecca', 'Jennifer', 'Everyone Else'],
+            'cases': [65, 48, 32],
+            'conversion_rates': [20.3, 18.7, 15.2]
+        }
+    
+    def _render_conversion_funnel(self, conversion_data: Dict):
+        """Render conversion funnel chart"""
+        stages = ['Leads', 'Consultations', 'Discovery Meetings', 'Retained']
+        values = [
+            conversion_data.get('leads', 0),
+            conversion_data.get('consultations', 0),
+            conversion_data.get('discovery_meetings', 0),
+            conversion_data.get('retained', 0)
+        ]
+        
+        fig = go.Figure(go.Funnel(
+            y=stages,
+            x=values,
+            textinfo="value+percent initial"
+        ))
+        
+        fig.update_layout(
+            title="Conversion Funnel",
+            height=500
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_conversion_rates_trend(self, conversion_data: Dict):
+        """Render conversion rates trend chart"""
+        # This would show conversion rates over time
+        # For now, show a placeholder
+        months = ['Jan', 'Feb', 'Mar', 'Apr', 'May']
+        rates = [8.2, 9.1, 7.8, 10.3, 8.9]
+        
+        fig = px.line(x=months, y=rates,
+                     title='Conversion Rate Trend',
+                     labels={'x': 'Month', 'y': 'Conversion Rate (%)'},
+                     color_discrete_sequence=[self.colors['success']])
+        
+        fig.update_layout(
+            xaxis_title="Month",
+            yaxis_title="Conversion Rate (%)",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_practice_area_comparison(self, practice_data: Dict):
+        """Render practice area comparison chart"""
+        fig = px.bar(x=practice_data['practice_areas'], y=practice_data['cases'],
+                    title='Cases by Practice Area',
+                    labels={'x': 'Practice Area', 'y': 'Number of Cases'},
+                    color=practice_data['cases'],
+                    color_continuous_scale='viridis')
+        
+        fig.update_layout(
+            xaxis_title="Practice Area",
+            yaxis_title="Number of Cases",
+            height=400,
+            xaxis={'tickangle': 45}
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_practice_area_trends(self, practice_data: Dict):
+        """Render practice area trends chart"""
+        # This would show trends over time for each practice area
+        # For now, show a placeholder
+        st.info("Practice area trends over time would be displayed here.")
+    
+    def _render_intake_specialist_performance(self, intake_data: Dict):
+        """Render intake specialist performance chart"""
+        fig = px.bar(x=intake_data['specialists'], y=intake_data['conversion_rates'],
+                    title='Intake Specialist Conversion Rates',
+                    labels={'x': 'Intake Specialist', 'y': 'Conversion Rate (%)'},
+                    color=intake_data['conversion_rates'],
+                    color_continuous_scale='plasma')
+        
+        fig.update_layout(
+            xaxis_title="Intake Specialist",
+            yaxis_title="Conversion Rate (%)",
+            height=400
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, config=self.chart_config)
+    
+    def _render_intake_specialist_trends(self, intake_data: Dict):
+        """Render intake specialist trends chart"""
+        # This would show trends over time for each intake specialist
+        # For now, show a placeholder
+        st.info("Intake specialist trends over time would be displayed here.")
