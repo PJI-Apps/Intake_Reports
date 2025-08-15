@@ -262,8 +262,12 @@ class UIManager:
         
         # Visualizations
         st.subheader("Calls — Visualizations")
-        # This would call the visualization manager
-        st.info("Calls visualizations would be rendered here")
+        # Call the visualization manager for calls
+        viz_manager = st.session_state.get('viz_manager')
+        if viz_manager:
+            viz_manager.render_calls_visualizations(data_manager)
+        else:
+            st.info("Visualization manager not available.")
     
     def _get_available_months(self, df_calls: pd.DataFrame) -> list:
         """Get available months from calls data"""
@@ -324,8 +328,27 @@ class UIManager:
         st.markdown("---")
         st.header("📊 Conversion Trend Visualizations")
         
-        # This would contain the visualization logic
-        st.info("Visualization functionality would be implemented here")
+        # Date range selector for visualizations
+        col1, col2 = st.columns(2)
+        with col1:
+            viz_start_date = st.date_input(
+                "Start Date",
+                value=date.today().replace(day=1),
+                key="viz_start_date"
+            )
+        with col2:
+            viz_end_date = st.date_input(
+                "End Date", 
+                value=date.today(),
+                key="viz_end_date"
+            )
+        
+        if viz_start_date > viz_end_date:
+            st.error("Start date must be on or before end date.")
+            return
+        
+        # Render visualizations
+        viz_manager.render_conversion_trend_visualizations(data_manager, (viz_start_date, viz_end_date))
     
     def render_debug_section(self, data_manager):
         """Render the debug section"""
