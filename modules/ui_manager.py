@@ -186,7 +186,7 @@ class UIManager:
         st.divider()
         return period_key, uploaded
     
-        def _process_uploads(self, data_manager, batch_manager, calls_uploader, up_leads, up_init, up_disc, up_ncl,
+    def _process_uploads(self, data_manager, batch_manager, calls_uploader, up_leads, up_init, up_disc, up_ncl,
                          calls_period_key, upload_start, upload_end, force_replace_calls,
                          replace_leads, replace_init, replace_disc, replace_ncl):
         """Process all file uploads"""
