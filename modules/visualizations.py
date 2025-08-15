@@ -67,7 +67,7 @@ class VisualizationManager:
         """Render call-specific visualizations"""
         st.subheader("📞 Call Volume Analysis")
         
-        if data_manager.df_calls.empty:
+        if not hasattr(data_manager, 'df_calls') or data_manager.df_calls.empty:
             st.info("No call data available.")
             return
         
@@ -135,12 +135,12 @@ class VisualizationManager:
         """Generate visualization data for the given date range"""
         start_date, end_date = date_range
         
-        # Check if we have any data
-        has_calls = not data_manager.df_calls.empty
-        has_leads = not data_manager.df_leads.empty
-        has_ic = not data_manager.df_ic.empty
-        has_dm = not data_manager.df_dm.empty
-        has_ncl = not data_manager.df_ncl.empty
+        # Check if we have any data - safely check for attributes
+        has_calls = hasattr(data_manager, 'df_calls') and not data_manager.df_calls.empty
+        has_leads = hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty
+        has_ic = hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty
+        has_dm = hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty
+        has_ncl = hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty
         
         has_data = any([has_calls, has_leads, has_ic, has_dm, has_ncl])
         
