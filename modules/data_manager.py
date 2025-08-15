@@ -104,7 +104,7 @@ class DataManager:
         return None
     
     @st.cache_data(ttl=300, show_spinner=False)
-    def _read_worksheet_cached(self, sheet_url: str, tab_title: str, ver: int) -> pd.DataFrame:
+    def _read_worksheet_cached(_self, sheet_url: str, tab_title: str, ver: int) -> pd.DataFrame:
         """Cached worksheet reading"""
         try:
             ws = self._get_worksheet(tab_title)
@@ -150,8 +150,8 @@ class DataManager:
             return pd.DataFrame()
             
         try:
-            sheet_url = st.secrets["google_sheets"]["spreadsheet_id"]
-            return self._read_worksheet_cached(sheet_url, ws.title, st.session_state["gs_ver"])
+            # Use the cached client directly since we already have the connection
+            return self._read_worksheet_cached("", ws.title, st.session_state["gs_ver"])
         except Exception as e:
             self.log(f"Read failed for '{ws.title}': {e}")
             return pd.DataFrame()
@@ -458,5 +458,3 @@ class DataManager:
             start = this_end + timedelta(days=1)
             w += 1
         return weeks
-
-
