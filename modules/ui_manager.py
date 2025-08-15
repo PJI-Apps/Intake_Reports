@@ -264,8 +264,12 @@ class UIManager:
         
         # Visualizations
         st.subheader("Calls — Visualizations")
-        # This would call the visualization manager
-        st.info("Calls visualizations would be rendered here")
+        # Call the visualization manager for calls
+        viz_manager = st.session_state.get('viz_manager')
+        if viz_manager:
+            viz_manager.render_calls_visualizations(data_manager)
+        else:
+            st.info("Visualization manager not available.")
     
     def _get_available_months(self, df_calls: pd.DataFrame) -> list:
         """Get available months from calls data"""
@@ -485,8 +489,27 @@ class UIManager:
         st.markdown("---")
         st.header("📊 Conversion Trend Visualizations")
         
-        # This would contain the visualization logic
-        st.info("Visualization functionality would be implemented here")
+        # Date range selector for visualizations
+        col1, col2 = st.columns(2)
+        with col1:
+            viz_start_date = st.date_input(
+                "Start Date",
+                value=date.today().replace(day=1),
+                key="viz_start_date"
+            )
+        with col2:
+            viz_end_date = st.date_input(
+                "End Date", 
+                value=date.today(),
+                key="viz_end_date"
+            )
+        
+        if viz_start_date > viz_end_date:
+            st.error("Start date must be on or before end date.")
+            return
+        
+        # Render visualizations
+        viz_manager.render_conversion_trend_visualizations(data_manager, (viz_start_date, viz_end_date))
     
     def render_debug_section(self, data_manager):
         """Render the debug section"""
@@ -760,30 +783,41 @@ class UIManager:
         if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
             data_manager.load_all_data()
         
-        # Get date columns
-        leads_date_col = self._find_date_column(data_manager.df_leads)
-        ic_date_col = self._find_date_column(data_manager.df_ic)
-        dm_date_col = self._find_date_column(data_manager.df_dm)
-        ncl_date_col = self._find_date_column(data_manager.df_ncl)
+        # Get date columns - safely check if dataframes exist
+        leads_date_col = None
+        if hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty:
+            leads_date_col = self._find_date_column(data_manager.df_leads)
+        
+        ic_date_col = None
+        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+            ic_date_col = self._find_date_column(data_manager.df_ic)
+        
+        dm_date_col = None
+        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+            dm_date_col = self._find_date_column(data_manager.df_dm)
+        
+        ncl_date_col = None
+        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+            ncl_date_col = self._find_date_column(data_manager.df_ncl)
         
         # Filter data by date range
         leads_count = 0
-        if leads_date_col and not data_manager.df_leads.empty:
+        if leads_date_col and hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty:
             leads_mask = self._mask_by_range_dates(data_manager.df_leads, leads_date_col, start_date, end_date)
             leads_count = leads_mask.sum()
         
         consultations_count = 0
-        if ic_date_col and not data_manager.df_ic.empty:
+        if ic_date_col and hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
             ic_mask = self._mask_by_range_dates(data_manager.df_ic, ic_date_col, start_date, end_date)
             consultations_count = ic_mask.sum()
         
         discovery_count = 0
-        if dm_date_col and not data_manager.df_dm.empty:
+        if dm_date_col and hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
             dm_mask = self._mask_by_range_dates(data_manager.df_dm, dm_date_col, start_date, end_date)
             discovery_count = dm_mask.sum()
         
         retained_count = 0
-        if ncl_date_col and not data_manager.df_ncl.empty:
+        if ncl_date_col and hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
             ncl_mask = self._mask_by_range_dates(data_manager.df_ncl, ncl_date_col, start_date, end_date)
             retained_count = ncl_mask.sum()
         
