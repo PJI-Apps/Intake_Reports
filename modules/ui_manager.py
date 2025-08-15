@@ -184,14 +184,19 @@ class UIManager:
         st.divider()
         return period_key, uploaded
     
-    def _process_uploads(self, data_manager, batch_manager, calls_uploader, up_leads, up_init, up_disc, up_ncl,
-                        calls_period_key, upload_start, upload_end, force_replace_calls,
-                        replace_leads, replace_init, replace_disc, replace_ncl):
+        def _process_uploads(self, data_manager, batch_manager, calls_uploader, up_leads, up_init, up_disc, up_ncl,
+                         calls_period_key, upload_start, upload_end, force_replace_calls,
+                         replace_leads, replace_init, replace_disc, replace_ncl):
         """Process all file uploads"""
-        # This would contain the upload processing logic
-        # For now, just show a placeholder
-        if any([calls_uploader, up_leads, up_init, up_disc, up_ncl]):
-            st.info("Upload processing functionality would be implemented here")
+        # Import and use the upload processor
+        from .upload_processor import UploadProcessor
+        
+        upload_processor = UploadProcessor(data_manager, batch_manager)
+        upload_processor.process_all_uploads(
+            calls_uploader, up_leads, up_init, up_disc, up_ncl,
+            calls_period_key, upload_start, upload_end, force_replace_calls,
+            replace_leads, replace_init, replace_disc, replace_ncl
+        )
     
     def render_calls_report(self, data_manager):
         """Render the calls report section"""
@@ -610,6 +615,3 @@ class UIManager:
   <tbody>""" + trs + """</tbody>
 </table>"""
         st.markdown(html, unsafe_allow_html=True)
-
-
-
