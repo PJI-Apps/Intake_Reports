@@ -364,7 +364,7 @@ class UIManager:
     
     def _filter_calls_data(self, df_calls: pd.DataFrame, sel_year: str, sel_month_name: str, 
                           sel_cat: str, sel_name: str) -> pd.DataFrame:
-        """Filter calls data based on selected criteria"""
+        """Filter calls data based on selected criteria and aggregate by person"""
         if df_calls.empty or "Month-Year" not in df_calls.columns:
             return pd.DataFrame()
         
@@ -388,8 +388,58 @@ class UIManager:
         
         filtered_calls = filtered_calls.loc[mask_calls_extra].copy()
         
-        # The data is already aggregated per person, so we don't need to aggregate again
-        # Just return the filtered data as-is
+        # If we have multiple rows for the same person in the same month, we need to aggregate them
+        # This happens when multiple uploads are done for different date ranges within the same month
+        if not filtered_calls.empty and len(filtered_calls) > 1:
+            # Identify numeric columns that should be summed
+            numeric_cols = []
+            for col in filtered_calls.columns:
+                if col in ["Total Calls", "Completed Calls", "Outgoing", "Received", 
+                          "Forwarded to Voicemail", "Answered by Other", "Missed",
+                          "Total Call Time", "Total Hold Time", "__avg_sec", "__hold_sec", "__total_sec"]:
+                    # Check if the column contains numeric data
+                    try:
+                        pd.to_numeric(filtered_calls[col], errors='coerce')
+                        numeric_cols.append(col)
+                    except:
+                        pass
+            
+            # Non-numeric columns to keep (take first value from each group)
+            non_numeric_cols = [col for col in filtered_calls.columns 
+                              if col not in numeric_cols and col != "Name"]
+            
+            # Group by Name and aggregate
+            if numeric_cols:
+                # Sum numeric columns
+                aggregated = filtered_calls.groupby("Name")[numeric_cols].sum().reset_index()
+                
+                # Add back non-numeric columns (take first value from each group)
+                for col in non_numeric_cols:
+                    if col in filtered_calls.columns:
+                        first_values = filtered_calls.groupby("Name")[col].first().reset_index()
+                        aggregated = aggregated.merge(first_values, on="Name", how="left")
+                
+                # Recalculate average call time based on aggregated totals
+                if "Total Call Time" in aggregated.columns and "Completed Calls" in aggregated.columns:
+                    def safe_avg_call_time(row):
+                        try:
+                            completed_calls = float(row["Completed Calls"])
+                            total_time = float(row["Total Call Time"])
+                            if completed_calls > 0:
+                                return round(total_time / completed_calls, 2)
+                            else:
+                                return 0.0
+                        except (ValueError, TypeError, ZeroDivisionError):
+                            return 0.0
+                    
+                    aggregated["Avg Call Time"] = aggregated.apply(safe_avg_call_time, axis=1)
+                
+                return aggregated
+            else:
+                # No numeric columns to aggregate, just take first row per person
+                return filtered_calls.groupby("Name").first().reset_index()
+        
+        # If only one row or no rows, return as-is
         return filtered_calls
     
     def render_conversion_report(self, data_manager):
