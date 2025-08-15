@@ -210,6 +210,11 @@ class UIManager:
         st.markdown("---")
         st.header("📞 Zoom Call Reports")
         
+        # Check if calls data is available
+        if not hasattr(data_manager, 'df_calls') or data_manager.df_calls.empty:
+            st.info("No calls data available. Please upload calls data first.")
+            return
+        
         with st.expander("📞 Calls Report", expanded=False):
             st.subheader("Filters — Calls")
         
@@ -313,6 +318,10 @@ class UIManager:
         st.markdown("---")
         st.header("📊 Firm Conversion Report")
         
+        # Load data if not already loaded
+        if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
+            data_manager.load_all_data()
+        
         with st.expander("📅 Filter", expanded=False):
             row = st.columns([2, 1, 1])  # Period (wide), Year, Month
         
@@ -384,10 +393,6 @@ class UIManager:
             start_date, end_date = custom_start, custom_end
         
         st.caption(f"Showing Conversion metrics for **{start_date:%-d %b %Y} → {end_date:%-d %b %Y}**")
-        
-        # Load data if not already loaded
-        if not hasattr(data_manager, 'df_leads') or data_manager.df_leads.empty:
-            data_manager.load_all_data()
         
         # Filtered slices (date-in-range only; column names are fixed by your files)
         # Find the correct column names
