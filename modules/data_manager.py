@@ -150,7 +150,7 @@ class DataManager:
             return pd.DataFrame()
             
         try:
-            sheet_url = st.secrets["google_sheet"]["spreadsheet_id"]
+            sheet_url = st.secrets["google_sheets"]["spreadsheet_id"]
             return self._read_worksheet_cached(sheet_url, ws.title, st.session_state["gs_ver"])
         except Exception as e:
             self.log(f"Read failed for '{ws.title}': {e}")
@@ -458,4 +458,5 @@ class DataManager:
             start = this_end + timedelta(days=1)
             w += 1
         return weeks
+
 
