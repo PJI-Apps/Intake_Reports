@@ -322,11 +322,21 @@ class UIManager:
         
         # Display results
         st.subheader("Calls — Results")
-        calls_display_cols = [
+        # Define all possible display columns
+        all_calls_display_cols = [
             "Category", "Name", "Total Calls", "Completed Calls", "Outgoing", "Received",
             "Forwarded to Voicemail", "Answered by Other", "Missed",
             "Avg Call Time", "Total Call Time", "Total Hold Time", "Month-Year"
         ]
+        
+        # Only include columns that actually exist in the DataFrame
+        calls_display_cols = [col for col in all_calls_display_cols if col in filtered_calls.columns]
+        
+        # Debug info - show available columns if some are missing
+        missing_cols = [col for col in all_calls_display_cols if col not in filtered_calls.columns]
+        if missing_cols:
+            st.info(f"Note: Some expected columns are not available: {missing_cols}")
+            st.info(f"Available columns: {list(filtered_calls.columns)}")
         
         if not filtered_calls.empty:
             st.dataframe(filtered_calls[calls_display_cols], hide_index=True, use_container_width=True)
