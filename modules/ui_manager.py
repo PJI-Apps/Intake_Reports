@@ -396,13 +396,19 @@ class UIManager:
                 
                 # Calculate average call time for aggregated data
                 if "Total Call Time" in existing_numeric_cols and "Completed Calls" in existing_numeric_cols:
-                    # Avoid division by zero
-                    aggregated["Avg Call Time"] = aggregated.apply(
-                        lambda row: (
-                            row["Total Call Time"] / row["Completed Calls"]
-                        ).round(2) if row["Completed Calls"] > 0 else 0.0,
-                        axis=1
-                    )
+                    # Avoid division by zero with more robust checking
+                    def safe_avg_call_time(row):
+                        try:
+                            completed_calls = float(row["Completed Calls"])
+                            total_time = float(row["Total Call Time"])
+                            if completed_calls > 0:
+                                return round(total_time / completed_calls, 2)
+                            else:
+                                return 0.0
+                        except (ValueError, TypeError, ZeroDivisionError):
+                            return 0.0
+                    
+                    aggregated["Avg Call Time"] = aggregated.apply(safe_avg_call_time, axis=1)
                 
                 # Add back non-numeric columns (take first value from each group)
                 non_numeric_cols = [col for col in filtered_calls.columns 
