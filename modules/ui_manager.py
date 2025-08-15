@@ -109,7 +109,61 @@ class UIManager:
                 st.caption("Deletes every row in the selected sheet. Use with care.")
                 confirm_wipe = st.checkbox("I understand this cannot be undone.", key="confirm_wipe")
                 if st.button("Wipe ALL rows", disabled=not confirm_wipe, use_container_width=True):
-                    st.info("Wipe functionality would be implemented here")
+                    try:
+                        # Get current data
+                        current_df = data_manager.read_worksheet_by_name(key)
+                        if current_df is not None and not current_df.empty:
+                            # Create empty DataFrame with same headers
+                            empty_df = pd.DataFrame(columns=current_df.columns)
+                            # Write empty DataFrame back to sheet
+                            success = data_manager.write_worksheet_by_name(key, empty_df)
+                            if success:
+                                st.success(f"✅ All data wiped from {sel_label}. Headers preserved.")
+                                st.session_state["gs_ver"] = st.session_state.get("gs_ver", 0) + 1
+                                st.rerun()
+                            else:
+                                st.error(f"❌ Failed to wipe data from {sel_label}")
+                        else:
+                            st.info(f"No data found in {sel_label}")
+                    except Exception as e:
+                        st.error(f"Error wiping data: {str(e)}")
+            
+            # Add a master reset option for all sheets
+            with st.container(border=True):
+                st.markdown("**🗑️ Master Reset (All Sheets)**")
+                st.caption("Wipe ALL data from ALL sheets at once. Use with extreme care.")
+                confirm_master = st.checkbox("I understand this will delete ALL data from ALL sheets.", key="confirm_master")
+                if st.button("🗑️ Master Reset All Sheets", disabled=not confirm_master, use_container_width=True, type="secondary"):
+                    try:
+                        success_count = 0
+                        total_sheets = 5
+                        
+                        for sheet_name in ["CALLS", "LEADS", "INIT", "DISC", "NCL"]:
+                            try:
+                                # Get current data
+                                current_df = data_manager.read_worksheet_by_name(sheet_name)
+                                if current_df is not None and not current_df.empty:
+                                    # Create empty DataFrame with same headers
+                                    empty_df = pd.DataFrame(columns=current_df.columns)
+                                    # Write empty DataFrame back to sheet
+                                    success = data_manager.write_worksheet_by_name(sheet_name, empty_df)
+                                    if success:
+                                        success_count += 1
+                                    else:
+                                        st.error(f"Failed to wipe {sheet_name}")
+                                else:
+                                    success_count += 1  # No data to wipe
+                            except Exception as e:
+                                st.error(f"Error wiping {sheet_name}: {str(e)}")
+                        
+                        if success_count == total_sheets:
+                            st.success("✅ **Master Reset Complete**: All data wiped from all sheets. Headers preserved.")
+                            st.session_state["gs_ver"] = st.session_state.get("gs_ver", 0) + 1
+                            st.rerun()
+                        else:
+                            st.warning(f"⚠️ Partial success: {success_count}/{total_sheets} sheets wiped")
+                    except Exception as e:
+                        st.error(f"Error during master reset: {str(e)}")
     
     def render_upload_section(self, data_manager, batch_manager):
         """Render the data upload section"""
