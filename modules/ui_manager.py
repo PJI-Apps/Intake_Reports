@@ -597,7 +597,11 @@ class UIManager:
             start_date, end_date = mstart, self._clamp_to_today(mend)
         
         # Build counts & report using original logic
-        met_counts_raw = self._met_counts_from_ic_dm_index(data_manager.df_ic, data_manager.df_dm, start_date, end_date)
+        met_counts_raw = self._met_counts_from_ic_dm_index(
+            data_manager.df_ic if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.DataFrame(),
+            data_manager.df_dm if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.DataFrame(),
+            start_date, end_date
+        )
         met_by_attorney = {name: 0 for name in CANON}  # Initialize all attorneys with 0
         
         # Distribute counts to appropriate attorneys, aggregating unknown ones to "Other"
@@ -608,7 +612,10 @@ class UIManager:
                 # If attorney not in CANON, add to "Other" count
                 met_by_attorney["Other"] = met_by_attorney.get("Other", 0) + int(count)
         
-        retained_by_attorney = self._retained_counts_from_ncl(data_manager.df_ncl, start_date, end_date)
+        retained_by_attorney = self._retained_counts_from_ncl(
+            data_manager.df_ncl if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.DataFrame(),
+            start_date, end_date
+        )
         
         report = pd.DataFrame({
             "Attorney": CANON,
@@ -721,12 +728,32 @@ class UIManager:
         total_pncs = self._calculate_total_pncs_for_intake(data_manager, start_date, end_date)
         
         for specialist in intake_specialists:
-            row1 = self._intake_pncs_by_specialist(data_manager.df_leads, specialist, start_date, end_date)
-            row3 = self._intake_retained_without_consult(data_manager.df_ncl, specialist, start_date, end_date)
-            row4 = self._intake_scheduled_consult(data_manager.df_ic, data_manager.df_dm, specialist, start_date, end_date)
-            row6 = self._intake_showed_consult(data_manager.df_ic, data_manager.df_dm, specialist, start_date, end_date)
-            row8 = self._intake_retained_after_consult(data_manager.df_ncl, specialist, start_date, end_date)
-            row10 = self._intake_total_retained(data_manager.df_ncl, specialist, start_date, end_date)
+            row1 = self._intake_pncs_by_specialist(
+                data_manager.df_leads if hasattr(data_manager, 'df_leads') and not data_manager.df_leads.empty else pd.DataFrame(),
+                specialist, start_date, end_date
+            )
+            row3 = self._intake_retained_without_consult(
+                data_manager.df_ncl if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.DataFrame(),
+                specialist, start_date, end_date
+            )
+            row4 = self._intake_scheduled_consult(
+                data_manager.df_ic if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.DataFrame(),
+                data_manager.df_dm if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.DataFrame(),
+                specialist, start_date, end_date
+            )
+            row6 = self._intake_showed_consult(
+                data_manager.df_ic if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty else pd.DataFrame(),
+                data_manager.df_dm if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty else pd.DataFrame(),
+                specialist, start_date, end_date
+            )
+            row8 = self._intake_retained_after_consult(
+                data_manager.df_ncl if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.DataFrame(),
+                specialist, start_date, end_date
+            )
+            row10 = self._intake_total_retained(
+                data_manager.df_ncl if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty else pd.DataFrame(),
+                specialist, start_date, end_date
+            )
             
             # Calculate percentages
             row2_pct = self._pct(row1, total_pncs) if total_pncs > 0 else 0  # % of total PNCs
