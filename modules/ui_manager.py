@@ -393,25 +393,70 @@ class UIManager:
         if not filtered_calls.empty and len(filtered_calls) > 1:
             # Identify numeric columns that should be summed
             numeric_cols = []
+            time_cols = []
             for col in filtered_calls.columns:
                 if col in ["Total Calls", "Completed Calls", "Outgoing", "Received", 
                           "Forwarded to Voicemail", "Answered by Other", "Missed",
-                          "Total Call Time", "Total Hold Time", "__avg_sec", "__hold_sec", "__total_sec"]:
+                          "__avg_sec", "__hold_sec", "__total_sec"]:
                     # Check if the column contains numeric data
                     try:
                         pd.to_numeric(filtered_calls[col], errors='coerce')
                         numeric_cols.append(col)
                     except:
                         pass
+                elif col in ["Total Call Time", "Total Hold Time"]:
+                    # These are time columns that need special handling
+                    time_cols.append(col)
             
             # Non-numeric columns to keep (take first value from each group)
             non_numeric_cols = [col for col in filtered_calls.columns 
-                              if col not in numeric_cols and col != "Name"]
+                              if col not in numeric_cols and col not in time_cols and col != "Name"]
             
             # Group by Name and aggregate
-            if numeric_cols:
-                # Sum numeric columns
-                aggregated = filtered_calls.groupby("Name")[numeric_cols].sum().reset_index()
+            if numeric_cols or time_cols:
+                # Handle numeric columns
+                if numeric_cols:
+                    aggregated = filtered_calls.groupby("Name")[numeric_cols].sum().reset_index()
+                else:
+                    aggregated = filtered_calls.groupby("Name").first().reset_index()
+                
+                # Handle time columns by converting to seconds, summing, then converting back
+                for time_col in time_cols:
+                    if time_col in filtered_calls.columns:
+                        # Convert time strings to seconds, sum, then convert back to time format
+                        def time_to_seconds(time_str):
+                            try:
+                                if pd.isna(time_str) or time_str == '':
+                                    return 0
+                                # Handle time format like "00:46:38"
+                                parts = str(time_str).split(':')
+                                if len(parts) == 3:
+                                    hours, minutes, seconds = map(int, parts)
+                                    return hours * 3600 + minutes * 60 + seconds
+                                return 0
+                            except:
+                                return 0
+                        
+                        def seconds_to_time(seconds):
+                            try:
+                                if seconds == 0:
+                                    return "00:00:00"
+                                hours = seconds // 3600
+                                minutes = (seconds % 3600) // 60
+                                secs = seconds % 60
+                                return f"{hours:02d}:{minutes:02d}:{secs:02d}"
+                            except:
+                                return "00:00:00"
+                        
+                        # Convert to seconds, sum, then convert back
+                        time_seconds = filtered_calls[time_col].apply(time_to_seconds)
+                        summed_seconds = filtered_calls.groupby("Name")[time_col].apply(
+                            lambda x: sum(time_to_seconds(t) for t in x)
+                        ).reset_index()
+                        summed_seconds[time_col] = summed_seconds[time_col].apply(seconds_to_time)
+                        
+                        # Merge with aggregated data
+                        aggregated = aggregated.merge(summed_seconds, on="Name", how="left")
                 
                 # Add back non-numeric columns (take first value from each group)
                 for col in non_numeric_cols:
@@ -424,13 +469,20 @@ class UIManager:
                     def safe_avg_call_time(row):
                         try:
                             completed_calls = float(row["Completed Calls"])
-                            total_time = float(row["Total Call Time"])
                             if completed_calls > 0:
-                                return round(total_time / completed_calls, 2)
-                            else:
-                                return 0.0
+                                # Convert Total Call Time to seconds for calculation
+                                time_str = str(row["Total Call Time"])
+                                parts = time_str.split(':')
+                                if len(parts) == 3:
+                                    hours, minutes, seconds = map(int, parts)
+                                    total_seconds = hours * 3600 + minutes * 60 + seconds
+                                    avg_seconds = total_seconds / completed_calls
+                                    avg_minutes = int(avg_seconds // 60)
+                                    avg_secs = int(avg_seconds % 60)
+                                    return f"{avg_minutes:02d}:{avg_secs:02d}"
+                            return "00:00"
                         except (ValueError, TypeError, ZeroDivisionError):
-                            return 0.0
+                            return "00:00"
                     
                     aggregated["Avg Call Time"] = aggregated.apply(safe_avg_call_time, axis=1)
                 
