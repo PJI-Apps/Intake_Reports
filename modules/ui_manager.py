@@ -135,6 +135,12 @@ class UIManager:
             st.error("Upload start must be on or before end.")
             st.stop()
         
+        # Informational message about data upload
+        st.info("📊 Note: All raw data will be uploaded to Google Sheets for auditing. Date range is used for reference only.")
+        
+        # Keep bypass_date_filter for backward compatibility (always True now)
+        bypass_date_filter = True
+        
         # File uploaders
         up_leads = st.file_uploader("Upload **Leads_PNCs**", type=["csv", "xls", "xlsx"],
                                     key="up_leads_pncs", on_change=self._keep_open_flag, args=("exp_upload_open",))
@@ -156,7 +162,7 @@ class UIManager:
         # Process uploads
         self._process_uploads(data_manager, batch_manager, calls_uploader, up_leads, up_init, up_disc, up_ncl,
                              calls_period_key, upload_start, upload_end, force_replace_calls,
-                             replace_leads, replace_init, replace_disc, replace_ncl)
+                             replace_leads, replace_init, replace_disc, replace_ncl, bypass_date_filter)
     
     def _render_upload_section(self, section_id: str, title: str, expander_flag: str) -> Tuple[str, object]:
         """Render individual upload section"""
@@ -193,7 +199,7 @@ class UIManager:
     
     def _process_uploads(self, data_manager, batch_manager, calls_uploader, up_leads, up_init, up_disc, up_ncl,
                          calls_period_key, upload_start, upload_end, force_replace_calls,
-                         replace_leads, replace_init, replace_disc, replace_ncl):
+                         replace_leads, replace_init, replace_disc, replace_ncl, bypass_date_filter):
         """Process all file uploads"""
         # Import and use the upload processor
         from .upload_processor import UploadProcessor
@@ -202,7 +208,7 @@ class UIManager:
         upload_processor.process_all_uploads(
             calls_uploader, up_leads, up_init, up_disc, up_ncl,
             calls_period_key, upload_start, upload_end, force_replace_calls,
-            replace_leads, replace_init, replace_disc, replace_ncl
+            replace_leads, replace_init, replace_disc, replace_ncl, bypass_date_filter
         )
     
     def render_calls_report(self, data_manager):
