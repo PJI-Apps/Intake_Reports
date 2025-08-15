@@ -175,8 +175,8 @@ class DataManager:
         """Load all data from Google Sheets"""
         self.df_calls = self.read_worksheet_by_name("CALLS")
         self.df_leads = self.read_worksheet_by_name("LEADS")
-        self.df_init = self.read_worksheet_by_name("INIT")
-        self.df_disc = self.read_worksheet_by_name("DISC")
+        self.df_ic = self.read_worksheet_by_name("INIT")
+        self.df_dm = self.read_worksheet_by_name("DISC")
         self.df_ncl = self.read_worksheet_by_name("NCL")
         
         # Process calls data if available
