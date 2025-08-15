@@ -218,8 +218,9 @@ class UIManager:
         with st.expander("📞 Calls Report", expanded=False):
             st.subheader("Filters — Calls")
         
-        # Get available months
-        all_months = self._get_available_months(data_manager.df_calls)
+        # Get available months - safely access df_calls
+        df_calls = data_manager.df_calls if hasattr(data_manager, 'df_calls') else pd.DataFrame()
+        all_months = self._get_available_months(df_calls)
         if all_months:
             latest_my = max(all_months)
             latest_year, latest_mnum = latest_my.split("-")
@@ -245,15 +246,15 @@ class UIManager:
         sel_month_name = c2.selectbox("Month", month_options,
                                      index=(month_options.index(latest_mname) if latest_mname in month_options else 0))
         
-        cat_choices = ["All"] + (sorted(data_manager.df_calls["Category"].unique().tolist()) 
-                                if not data_manager.df_calls.empty else [])
+        cat_choices = ["All"] + (sorted(df_calls["Category"].unique().tolist()) 
+                                if not df_calls.empty else [])
         sel_cat = c3.selectbox("Category", cat_choices, index=0)
-        base = data_manager.df_calls if sel_cat == "All" else data_manager.df_calls[data_manager.df_calls["Category"] == sel_cat]
+        base = df_calls if sel_cat == "All" else df_calls[df_calls["Category"] == sel_cat]
         name_choices = ["All"] + (sorted(base["Name"].unique().tolist()) if not base.empty else [])
         sel_name = c4.selectbox("Name", name_choices, index=0)
         
         # Filter data
-        filtered_calls = self._filter_calls_data(data_manager.df_calls, sel_year, sel_month_name, sel_cat, sel_name)
+        filtered_calls = self._filter_calls_data(df_calls, sel_year, sel_month_name, sel_cat, sel_name)
         
         # Display results
         st.subheader("Calls — Results")
@@ -331,11 +332,14 @@ class UIManager:
         }
         month_nums = list(months_map_names.keys())
         
-        years_detected = self._years_from(
-            (data_manager.df_ncl,  "Date we had BOTH the signed CLA and full payment"),
-            (data_manager.df_ic, "Initial Consultation With Pji Law"),
-            (data_manager.df_dm, "Discovery Meeting With Pji Law"),
-        )
+        # Check if dataframes exist before calling _years_from
+        years_detected = set()
+        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+            years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
+        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+            years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
+        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+            years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
         years_conv = sorted(years_detected) if years_detected else [date.today().year]
         
         with row[0]:
