@@ -68,10 +68,10 @@ class UploadProcessor:
                              upload_date: date, force_replace: bool) -> bool:
         """Process calls CSV upload"""
         try:
-            # Check if file already uploaded
+            # Check if file already uploaded (but allow if it's a different period)
             file_hash = self.data_manager.file_md5(calls_uploader)
             if file_hash in st.session_state.get("hashes_calls", set()) and not force_replace:
-                st.warning("This calls file has already been uploaded. Check 'Replace' to upload again.")
+                st.warning("This calls file has already been uploaded. Check 'Replace this month in Calls if it already exists' to upload again.")
                 return False
             
             # Read and process the file
@@ -163,10 +163,10 @@ class UploadProcessor:
                              batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process Leads/PNCs upload"""
         try:
-            # Check if file already uploaded
+            # Check if file already uploaded (but allow if it's a different date range)
             file_hash = self.data_manager.file_md5(up_leads)
             if file_hash in st.session_state.get("hashes_conv", set()) and not replace:
-                st.warning("This leads file has already been uploaded. Check 'Replace' to upload again.")
+                st.warning("This leads file has already been uploaded. Check 'Replace matching records in Leads' to upload again.")
                 return False
             
             # Read the file
@@ -222,10 +222,10 @@ class UploadProcessor:
                             batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process Initial Consultation upload"""
         try:
-            # Check if file already uploaded
+            # Check if file already uploaded (but allow if it's a different date range)
             file_hash = self.data_manager.file_md5(up_init)
             if file_hash in st.session_state.get("hashes_conv", set()) and not replace:
-                st.warning("This initial consultation file has already been uploaded. Check 'Replace' to upload again.")
+                st.warning("This initial consultation file has already been uploaded. Check 'Replace this date range in Initial_Consultation' to upload again.")
                 return False
             
             # Read the file
@@ -281,10 +281,10 @@ class UploadProcessor:
                             batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process Discovery Meeting upload"""
         try:
-            # Check if file already uploaded
+            # Check if file already uploaded (but allow if it's a different date range)
             file_hash = self.data_manager.file_md5(up_disc)
             if file_hash in st.session_state.get("hashes_conv", set()) and not replace:
-                st.warning("This discovery meeting file has already been uploaded. Check 'Replace' to upload again.")
+                st.warning("This discovery meeting file has already been uploaded. Check 'Replace this date range in Discovery_Meeting' to upload again.")
                 return False
             
             # Read the file
@@ -340,10 +340,10 @@ class UploadProcessor:
                            batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process New Client List upload"""
         try:
-            # Check if file already uploaded
+            # Check if file already uploaded (but allow if it's a different date range)
             file_hash = self.data_manager.file_md5(up_ncl)
             if file_hash in st.session_state.get("hashes_conv", set()) and not replace:
-                st.warning("This new client list file has already been uploaded. Check 'Replace' to upload again.")
+                st.warning("This new client list file has already been uploaded. Check 'Replace this date range in New Client List' to upload again.")
                 return False
             
             # Read the file
