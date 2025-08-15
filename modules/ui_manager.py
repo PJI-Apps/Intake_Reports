@@ -364,7 +364,7 @@ class UIManager:
     
     def _filter_calls_data(self, df_calls: pd.DataFrame, sel_year: str, sel_month_name: str, 
                           sel_cat: str, sel_name: str) -> pd.DataFrame:
-        """Filter calls data based on selected criteria and aggregate by intake specialist"""
+        """Filter calls data based on selected criteria"""
         if df_calls.empty or "Month-Year" not in df_calls.columns:
             return pd.DataFrame()
         
@@ -388,49 +388,8 @@ class UIManager:
         
         filtered_calls = filtered_calls.loc[mask_calls_extra].copy()
         
-        # Aggregate by intake specialist (Name column)
-        if not filtered_calls.empty and "Name" in filtered_calls.columns:
-            # Group by Name and aggregate numeric columns
-            numeric_columns = [
-                "Total Calls", "Completed Calls", "Outgoing", "Received",
-                "Forwarded to Voicemail", "Answered by Other", "Missed",
-                "Total Call Time", "Total Hold Time"
-            ]
-            
-            # Only aggregate columns that exist
-            existing_numeric_cols = [col for col in numeric_columns if col in filtered_calls.columns]
-            
-            if existing_numeric_cols:
-                # Group by Name and sum numeric columns
-                aggregated = filtered_calls.groupby("Name")[existing_numeric_cols].sum().reset_index()
-                
-                # Calculate average call time for aggregated data
-                if "Total Call Time" in existing_numeric_cols and "Completed Calls" in existing_numeric_cols:
-                    # Avoid division by zero with more robust checking
-                    def safe_avg_call_time(row):
-                        try:
-                            completed_calls = float(row["Completed Calls"])
-                            total_time = float(row["Total Call Time"])
-                            if completed_calls > 0:
-                                return round(total_time / completed_calls, 2)
-                            else:
-                                return 0.0
-                        except (ValueError, TypeError, ZeroDivisionError):
-                            return 0.0
-                    
-                    aggregated["Avg Call Time"] = aggregated.apply(safe_avg_call_time, axis=1)
-                
-                # Add back non-numeric columns (take first value from each group)
-                non_numeric_cols = [col for col in filtered_calls.columns 
-                                  if col not in existing_numeric_cols and col != "Name"]
-                
-                for col in non_numeric_cols:
-                    if col in filtered_calls.columns:
-                        first_values = filtered_calls.groupby("Name")[col].first().reset_index()
-                        aggregated = aggregated.merge(first_values, on="Name", how="left")
-                
-                return aggregated
-        
+        # The data is already aggregated per person, so we don't need to aggregate again
+        # Just return the filtered data as-is
         return filtered_calls
     
     def render_conversion_report(self, data_manager):
