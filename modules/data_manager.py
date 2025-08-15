@@ -107,7 +107,7 @@ class DataManager:
     def _read_worksheet_cached(_self, sheet_url: str, tab_title: str, ver: int) -> pd.DataFrame:
         """Cached worksheet reading"""
         try:
-            ws = self._get_worksheet(tab_title)
+            ws = _self._get_worksheet(tab_title)
             if ws is None:
                 return pd.DataFrame()
             
@@ -123,7 +123,7 @@ class DataManager:
                     last_exc = e
             
             if last_exc is not None:
-                self.log(f"Read failed for '{tab_title}': {last_exc}")
+                _self.log(f"Read failed for '{tab_title}': {last_exc}")
                 return pd.DataFrame()
             
             df = df.loc[:, ~df.columns.str.contains("^Unnamed")]
@@ -137,7 +137,7 @@ class DataManager:
             return df.dropna(how="all").fillna("")
             
         except Exception as e:
-            self.log(f"Failed to read worksheet {tab_title}: {e}")
+            _self.log(f"Failed to read worksheet {tab_title}: {e}")
             return pd.DataFrame()
     
     def read_worksheet_by_name(self, logical_key: str) -> pd.DataFrame:
