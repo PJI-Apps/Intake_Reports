@@ -12,7 +12,7 @@ from typing import Optional, Tuple, Dict, List
 from .config import (
     MONTHS_MAP, MONTHS_MAP_NAMES, PRACTICE_AREAS, DISPLAY_NAME_OVERRIDES,
     INITIALS_TO_ATTORNEY, INTAKE_SPECIALISTS, INTAKE_INITIALS_TO_NAME,
-    EXCLUDED_PNC_STAGES
+    EXCLUDED_PNC_STAGES, TAB_NAMES
 )
 
 class UIManager:
@@ -610,3 +610,4 @@ class UIManager:
   <tbody>""" + trs + """</tbody>
 </table>"""
         st.markdown(html, unsafe_allow_html=True)
+
