@@ -455,8 +455,12 @@ class UIManager:
             y_end   = self._clamp_to_today(date(sel_year_conv, 12, 31)) if sel_year_conv == date.today().year else date(sel_year_conv, 12, 31)
             start_date, end_date = y_start, y_end
         elif period_mode == "Week of month":
-            wk = week_defs[sel_week_idx]
-            start_date, end_date = wk["start"], wk["end"]
+            if week_defs and 0 <= sel_week_idx < len(week_defs):
+                wk = week_defs[sel_week_idx]
+                start_date, end_date = wk["start"], wk["end"]
+            else:
+                st.error("No weeks available for the selected month. Please try a different period.")
+                st.stop()
         else:
             start_date, end_date = custom_start, custom_end
         
@@ -1715,9 +1719,24 @@ class UIManager:
     
     def _custom_weeks_for_month(self, year: int, month: int) -> List[Dict]:
         """Generate custom weeks for a month"""
-        # This is a placeholder - you'll need to implement the actual logic
-        # from your original app
-        return []
+        from calendar import monthrange
+        
+        last_day = monthrange(year, month)[1]
+        start_month = date(year, month, 1)
+        end_month = date(year, month, last_day)
+
+        first_sunday = start_month + timedelta(days=(6 - start_month.weekday()))
+        w1_end = min(first_sunday, end_month)
+        weeks = [{"label": "Week 1", "start": start_month, "end": w1_end}]
+
+        start = w1_end + timedelta(days=1)
+        w = 2
+        while start <= end_month:
+            this_end = min(start + timedelta(days=6), end_month)
+            weeks.append({"label": f"Week {w}", "start": start, "end": this_end})
+            start = this_end + timedelta(days=1)
+            w += 1
+        return weeks
     
     def _met_counts_from_ic_dm_index(self, ic_df: pd.DataFrame, dm_df: pd.DataFrame,
                                     sd: date, ed: date) -> pd.Series:
