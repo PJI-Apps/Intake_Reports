@@ -172,7 +172,22 @@ class BatchManager:
                 if key in st.session_state:
                     del st.session_state[key]
             
+            # Clear file hash tracking to allow re-uploads
+            if "hashes_calls" in st.session_state:
+                st.session_state["hashes_calls"].clear()
+            if "hashes_conv" in st.session_state:
+                st.session_state["hashes_conv"].clear()
+            
+            # Clear upload history
+            if "upload_history" in st.session_state:
+                st.session_state["upload_history"].clear()
+            
+            # Set flag to indicate master reset was performed
+            st.session_state["master_reset_performed"] = True
+            
+            # Force a page rerun to reset all file uploaders
             st.success("Master reset completed - all data cleared from all sheets (headers preserved)")
+            st.rerun()
             return True
         except Exception as e:
             st.error(f"Master reset failed: {str(e)}")
