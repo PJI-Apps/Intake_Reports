@@ -192,6 +192,10 @@ class UIManager:
         # Informational message about data upload
         st.info("📊 Note: All raw data will be uploaded to Google Sheets for auditing. Date range is used for reference only.")
         
+        # Add a note about re-uploading after master reset
+        if st.session_state.get("master_reset_performed", False):
+            st.warning("🔄 **Master Reset Detected**: You may need to click 'Allow Re-upload' in Batch Management if files show as already uploaded.")
+        
         # Keep bypass_date_filter for backward compatibility (always True now)
         bypass_date_filter = True
         
