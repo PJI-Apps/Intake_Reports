@@ -237,19 +237,19 @@ class BatchManager:
                 st.success("Sync functionality would be implemented here")
         
         with col4:
-            if st.button("🗑️ Wipe All Data", use_container_width=True, type="secondary"):
+            if st.button("🗑️ Master Reset (Wipe All)", use_container_width=True, type="secondary"):
                 # Show confirmation
-                st.warning("⚠️ Are you sure you want to wipe ALL data from ALL sheets? This action cannot be undone.")
+                st.warning("⚠️ **MASTER RESET**: This will wipe ALL data from ALL sheets (CALLS, LEADS, INIT, DISC, NCL). Headers will be preserved. This action cannot be undone.")
                 
                 col_confirm1, col_confirm2 = st.columns(2)
                 with col_confirm1:
-                    if st.button("✅ Yes, Wipe All Data", type="primary"):
+                    if st.button("✅ Yes, Master Reset All Data", type="primary"):
                         success = self.master_reset(data_manager)
                         if success:
-                            st.success("✅ All data has been wiped from all sheets. Headers preserved.")
+                            st.success("✅ **Master Reset Complete**: All data wiped from all sheets. Headers preserved. Ready for fresh uploads.")
                             st.rerun()
                         else:
-                            st.error("❌ Failed to wipe data")
+                            st.error("❌ Failed to perform master reset")
                 
                 with col_confirm2:
                     if st.button("❌ Cancel"):
