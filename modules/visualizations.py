@@ -211,7 +211,11 @@ class VisualizationManager:
         attorney_candidates = []
         for col in df.columns:
             col_lower = col.lower()
-            if any(keyword in col_lower for keyword in ['attorney', 'lawyer', 'assigned', 'assigned to', 'handling']):
+            # More specific attorney keywords to avoid picking up intake specialist columns
+            if any(keyword in col_lower for keyword in ['attorney', 'lawyer', 'counsel', 'legal counsel']):
+                attorney_candidates.append(col)
+            # Only include "assigned" if it's clearly attorney-related
+            elif 'assigned' in col_lower and any(keyword in col_lower for keyword in ['attorney', 'lawyer', 'counsel']):
                 attorney_candidates.append(col)
         
         if attorney_candidates:
@@ -223,11 +227,27 @@ class VisualizationManager:
         practice_candidates = []
         for col in df.columns:
             col_lower = col.lower()
-            if any(keyword in col_lower for keyword in ['practice', 'area', 'type', 'category', 'case type']):
+            # More specific practice area keywords
+            if any(keyword in col_lower for keyword in ['practice area', 'practice type', 'case type', 'legal area']):
+                practice_candidates.append(col)
+            # Include broader terms but be more careful
+            elif any(keyword in col_lower for keyword in ['practice', 'area', 'type']) and 'intake' not in col_lower:
                 practice_candidates.append(col)
         
         if practice_candidates:
             return practice_candidates[0]
+        return None
+    
+    def _find_intake_specialist_column(self, df: pd.DataFrame) -> Optional[str]:
+        """Find the most likely intake specialist column in a dataframe"""
+        intake_candidates = []
+        for col in df.columns:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in ['intake', 'specialist', 'assigned to', 'handling', 'assigned']):
+                intake_candidates.append(col)
+        
+        if intake_candidates:
+            return intake_candidates[0]
         return None
     
     def _mask_by_range_dates(self, df: pd.DataFrame, date_col: str, start: date, end: date) -> pd.Series:
@@ -545,6 +565,8 @@ class VisualizationManager:
             leads_df = viz_data['leads'].copy()
             attorney_col = self._find_attorney_column(leads_df)
             if attorney_col:
+                # Debug: Show what column was found
+                st.write(f"Found attorney column in leads: {attorney_col}")
                 leads_by_attorney = leads_df.groupby(attorney_col).size().reset_index(name='leads')
                 attorney_data.append(('leads', leads_by_attorney, attorney_col))
         
@@ -553,10 +575,13 @@ class VisualizationManager:
             ncl_df = viz_data['ncl'].copy()
             attorney_col = self._find_attorney_column(ncl_df)
             if attorney_col:
+                # Debug: Show what column was found
+                st.write(f"Found attorney column in NCL: {attorney_col}")
                 ncl_by_attorney = ncl_df.groupby(attorney_col).size().reset_index(name='retained')
                 attorney_data.append(('retained', ncl_by_attorney, attorney_col))
         
         if not attorney_data:
+            st.write("No attorney columns found in the data")
             return None
         
         # Merge attorney data
