@@ -34,11 +34,14 @@ def main():
     authenticator = setup_authentication()
     name, auth_status, username = check_auth_status(authenticator)
     
-    # Initialize managers
-    data_manager = DataManager()
-    ui_manager = UIManager()
-    batch_manager = BatchManager()
-    viz_manager = VisualizationManager()
+               # Initialize managers
+           data_manager = DataManager()
+           ui_manager = UIManager()
+           batch_manager = BatchManager()
+           viz_manager = VisualizationManager()
+           
+           # Store viz_manager in session state for access in UI methods
+           st.session_state['viz_manager'] = viz_manager
     
     # Main application title
     st.title("📊 Conversion and Call Report")
