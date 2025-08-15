@@ -6,7 +6,7 @@ import pandas as pd
 import time
 import random
 from datetime import date, datetime
-from typing import Optional
+from typing import Optional, Dict, List
 
 class BatchManager:
     """Manages batch operations and metadata for data uploads"""
@@ -35,6 +35,79 @@ class BatchManager:
         df["__batch_end"] = end_date
         df["__upload_timestamp"] = datetime.now().isoformat()
         return df
+    
+    def get_available_batches(self, data_manager) -> Dict[str, Dict[str, int]]:
+        """Get all available batches across all sheets with record counts"""
+        batches = {}
+        
+        for sheet_name in ["CALLS", "LEADS", "INIT", "DISC", "NCL"]:
+            try:
+                df = data_manager.read_worksheet_by_name(sheet_name)
+                if df is not None and not df.empty and "__batch_id" in df.columns:
+                    # Count records per batch
+                    batch_counts = df["__batch_id"].value_counts().to_dict()
+                    
+                    for batch_id, count in batch_counts.items():
+                        if batch_id and str(batch_id).strip() and str(batch_id) != "nan":
+                            if batch_id not in batches:
+                                batches[batch_id] = {}
+                            batches[batch_id][sheet_name] = count
+            except Exception as e:
+                st.warning(f"Error reading {sheet_name}: {str(e)}")
+        
+        return batches
+    
+    def delete_batch(self, batch_id: str, data_manager) -> Dict[str, int]:
+        """Delete all records with the specified batch ID from all sheets"""
+        deleted_counts = {}
+        
+        for sheet_name in ["CALLS", "LEADS", "INIT", "DISC", "NCL"]:
+            try:
+                df = data_manager.read_worksheet_by_name(sheet_name)
+                if df is not None and not df.empty and "__batch_id" in df.columns:
+                    before_count = len(df)
+                    
+                    # Filter out records with the specified batch ID
+                    df_filtered = df[df["__batch_id"] != batch_id].copy()
+                    after_count = len(df_filtered)
+                    deleted_count = before_count - after_count
+                    
+                    if deleted_count > 0:
+                        # Write back the filtered data
+                        success = data_manager.write_worksheet_by_name(sheet_name, df_filtered)
+                        if success:
+                            deleted_counts[sheet_name] = deleted_count
+                        else:
+                            st.error(f"Failed to write filtered data to {sheet_name}")
+                    else:
+                        deleted_counts[sheet_name] = 0
+                else:
+                    deleted_counts[sheet_name] = 0
+            except Exception as e:
+                st.error(f"Error deleting batch from {sheet_name}: {str(e)}")
+                deleted_counts[sheet_name] = 0
+        
+        return deleted_counts
+    
+    def get_batch_summary(self, batch_id: str, data_manager) -> Dict[str, Dict]:
+        """Get detailed summary of a specific batch across all sheets"""
+        summary = {}
+        
+        for sheet_name in ["CALLS", "LEADS", "INIT", "DISC", "NCL"]:
+            try:
+                df = data_manager.read_worksheet_by_name(sheet_name)
+                if df is not None and not df.empty and "__batch_id" in df.columns:
+                    batch_data = df[df["__batch_id"] == batch_id]
+                    if not batch_data.empty:
+                        summary[sheet_name] = {
+                            "count": len(batch_data),
+                            "upload_date": batch_data["__upload_date"].iloc[0] if "__upload_date" in batch_data.columns else "Unknown",
+                            "date_range": f"{batch_data['__batch_start'].iloc[0]} to {batch_data['__batch_end'].iloc[0]}" if "__batch_start" in batch_data.columns and "__batch_end" in batch_data.columns else "Unknown"
+                        }
+            except Exception as e:
+                st.warning(f"Error getting summary for {sheet_name}: {str(e)}")
+        
+        return summary
     
     def create_empty_sheet_with_headers(self, sheet_name: str) -> pd.DataFrame:
         """Create an empty DataFrame with proper headers for each sheet type"""
@@ -140,10 +213,12 @@ class BatchManager:
             st.error(f"Failed to assign batch to orphaned records in {sheet_name}: {str(e)}")
             return False
     
-    def render_batch_management_ui(self):
-        """Render the batch management UI"""
+    def render_batch_management_ui(self, data_manager):
+        """Render the batch management UI with deletion functionality"""
         st.markdown("### 📦 Batch Management")
-        col1, col2, col3 = st.columns(3)
+        
+        # Basic batch operations
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             if st.button("🔄 Generate New Batch ID", use_container_width=True):
@@ -161,6 +236,107 @@ class BatchManager:
                 # This would need data_manager passed in
                 st.success("Sync functionality would be implemented here")
         
+        with col4:
+            if st.button("🗑️ Wipe All Data", use_container_width=True, type="secondary"):
+                # Show confirmation
+                st.warning("⚠️ Are you sure you want to wipe ALL data from ALL sheets? This action cannot be undone.")
+                
+                col_confirm1, col_confirm2 = st.columns(2)
+                with col_confirm1:
+                    if st.button("✅ Yes, Wipe All Data", type="primary"):
+                        success = self.master_reset(data_manager)
+                        if success:
+                            st.success("✅ All data has been wiped from all sheets. Headers preserved.")
+                            st.rerun()
+                        else:
+                            st.error("❌ Failed to wipe data")
+                
+                with col_confirm2:
+                    if st.button("❌ Cancel"):
+                        st.rerun()
+        
         # Display current batch ID
         st.info(f"**Current Batch ID:** {st.session_state['current_batch_id']}")
+        
+        # Batch deletion section
+        st.markdown("#### 🗑️ Batch Deletion")
+        
+        # Get available batches
+        batches = self.get_available_batches(data_manager)
+        
+        if batches:
+            # Create a summary of batches
+            batch_summary = []
+            for batch_id, sheet_counts in batches.items():
+                total_records = sum(sheet_counts.values())
+                batch_summary.append({
+                    "batch_id": batch_id,
+                    "total_records": total_records,
+                    "sheets": ", ".join([f"{sheet}({count})" for sheet, count in sheet_counts.items()])
+                })
+            
+            # Sort by batch ID (newest first)
+            batch_summary.sort(key=lambda x: x["batch_id"], reverse=True)
+            
+            # Display batch summary
+            st.write("**Available Batches:**")
+            for batch in batch_summary:
+                st.write(f"• **{batch['batch_id']}**: {batch['total_records']} total records across {batch['sheets']}")
+            
+            # Batch deletion interface
+            st.divider()
+            
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                batch_options = [""] + [batch["batch_id"] for batch in batch_summary]
+                selected_batch = st.selectbox(
+                    "Select batch to delete",
+                    options=batch_options,
+                    key="batch_delete_select",
+                    help="Select a batch to permanently delete all its records from all sheets"
+                )
+            
+            with col2:
+                if st.button(
+                    "🗑️ Delete Selected Batch",
+                    disabled=not selected_batch,
+                    use_container_width=True,
+                    type="secondary"
+                ):
+                    if selected_batch:
+                        # Show confirmation
+                        st.warning(f"⚠️ Are you sure you want to delete batch '{selected_batch}'? This action cannot be undone.")
+                        
+                        col_confirm1, col_confirm2 = st.columns(2)
+                        with col_confirm1:
+                            if st.button("✅ Yes, Delete Batch", type="primary"):
+                                # Get batch summary before deletion
+                                batch_summary_before = self.get_batch_summary(selected_batch, data_manager)
+                                
+                                # Delete the batch
+                                deleted_counts = self.delete_batch(selected_batch, data_manager)
+                                
+                                # Show results
+                                total_deleted = sum(deleted_counts.values())
+                                if total_deleted > 0:
+                                    st.success(f"✅ Successfully deleted batch '{selected_batch}': {total_deleted} records removed")
+                                    
+                                    # Show detailed breakdown
+                                    st.write("**Deletion Summary:**")
+                                    for sheet_name, count in deleted_counts.items():
+                                        if count > 0:
+                                            st.write(f"• {sheet_name}: {count} records deleted")
+                                else:
+                                    st.info(f"No records found for batch '{selected_batch}'")
+                                
+                                # Refresh the page to update the batch list
+                                st.rerun()
+                        
+                        with col_confirm2:
+                            if st.button("❌ Cancel"):
+                                st.rerun()
+        else:
+            st.info("No batches found. Upload some data to see available batches.")
+        
         st.divider()
