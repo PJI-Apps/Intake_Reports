@@ -51,7 +51,7 @@ def main():
     
     # Main application sections
     with st.expander("🧾 Data Upload & Management", expanded=st.session_state.get("exp_upload_open", False)):
-        batch_manager.render_batch_management_ui()
+        batch_manager.render_batch_management_ui(data_manager)
         ui_manager.render_upload_section(data_manager, batch_manager)
     
     # Load and process data
