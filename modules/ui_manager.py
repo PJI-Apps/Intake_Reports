@@ -550,11 +550,14 @@ class UIManager:
         }
         month_nums = list(months_map_names.keys())
         
-        years_detected = self._years_from(
-            (data_manager.df_ncl,  "Date we had BOTH the signed CLA and full payment"),
-            (data_manager.df_ic, "Initial Consultation With Pji Law"),
-            (data_manager.df_dm, "Discovery Meeting With Pji Law"),
-        )
+        # Check if dataframes exist before calling _years_from
+        years_detected = set()
+        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+            years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
+        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+            years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
+        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+            years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
         years_conv = sorted(years_detected) if years_detected else [date.today().year]
         
         with row[0]:
@@ -663,11 +666,14 @@ class UIManager:
         }
         month_nums = list(months_map_names.keys())
         
-        years_detected = self._years_from(
-            (data_manager.df_ncl,  "Date we had BOTH the signed CLA and full payment"),
-            (data_manager.df_ic, "Initial Consultation With Pji Law"),
-            (data_manager.df_dm, "Discovery Meeting With Pji Law"),
-        )
+        # Check if dataframes exist before calling _years_from
+        years_detected = set()
+        if hasattr(data_manager, 'df_ncl') and not data_manager.df_ncl.empty:
+            years_detected |= self._years_from((data_manager.df_ncl, "Date we had BOTH the signed CLA and full payment"))
+        if hasattr(data_manager, 'df_ic') and not data_manager.df_ic.empty:
+            years_detected |= self._years_from((data_manager.df_ic, "Initial Consultation With Pji Law"))
+        if hasattr(data_manager, 'df_dm') and not data_manager.df_dm.empty:
+            years_detected |= self._years_from((data_manager.df_dm, "Discovery Meeting With Pji Law"))
         years_conv = sorted(years_detected) if years_detected else [date.today().year]
         
         with row[0]:
