@@ -214,11 +214,11 @@ class BatchManager:
             return False
     
     def render_batch_management_ui(self, data_manager):
-        """Render the batch management UI with deletion functionality"""
+        """Render the batch management UI"""
         st.markdown("### 📦 Batch Management")
         
         # Basic batch operations
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2, col3 = st.columns(3)
         
         with col1:
             if st.button("🔄 Generate New Batch ID", use_container_width=True):
@@ -236,107 +236,7 @@ class BatchManager:
                 # This would need data_manager passed in
                 st.success("Sync functionality would be implemented here")
         
-        with col4:
-            if st.button("🗑️ Master Reset (Wipe All)", use_container_width=True, type="secondary"):
-                # Show confirmation
-                st.warning("⚠️ **MASTER RESET**: This will wipe ALL data from ALL sheets (CALLS, LEADS, INIT, DISC, NCL). Headers will be preserved. This action cannot be undone.")
-                
-                col_confirm1, col_confirm2 = st.columns(2)
-                with col_confirm1:
-                    if st.button("✅ Yes, Master Reset All Data", type="primary"):
-                        success = self.master_reset(data_manager)
-                        if success:
-                            st.success("✅ **Master Reset Complete**: All data wiped from all sheets. Headers preserved. Ready for fresh uploads.")
-                            st.rerun()
-                        else:
-                            st.error("❌ Failed to perform master reset")
-                
-                with col_confirm2:
-                    if st.button("❌ Cancel"):
-                        st.rerun()
-        
         # Display current batch ID
         st.info(f"**Current Batch ID:** {st.session_state['current_batch_id']}")
-        
-        # Batch deletion section
-        st.markdown("#### 🗑️ Batch Deletion")
-        
-        # Get available batches
-        batches = self.get_available_batches(data_manager)
-        
-        if batches:
-            # Create a summary of batches
-            batch_summary = []
-            for batch_id, sheet_counts in batches.items():
-                total_records = sum(sheet_counts.values())
-                batch_summary.append({
-                    "batch_id": batch_id,
-                    "total_records": total_records,
-                    "sheets": ", ".join([f"{sheet}({count})" for sheet, count in sheet_counts.items()])
-                })
-            
-            # Sort by batch ID (newest first)
-            batch_summary.sort(key=lambda x: x["batch_id"], reverse=True)
-            
-            # Display batch summary
-            st.write("**Available Batches:**")
-            for batch in batch_summary:
-                st.write(f"• **{batch['batch_id']}**: {batch['total_records']} total records across {batch['sheets']}")
-            
-            # Batch deletion interface
-            st.divider()
-            
-            col1, col2 = st.columns([2, 1])
-            
-            with col1:
-                batch_options = [""] + [batch["batch_id"] for batch in batch_summary]
-                selected_batch = st.selectbox(
-                    "Select batch to delete",
-                    options=batch_options,
-                    key="batch_delete_select",
-                    help="Select a batch to permanently delete all its records from all sheets"
-                )
-            
-            with col2:
-                if st.button(
-                    "🗑️ Delete Selected Batch",
-                    disabled=not selected_batch,
-                    use_container_width=True,
-                    type="secondary"
-                ):
-                    if selected_batch:
-                        # Show confirmation
-                        st.warning(f"⚠️ Are you sure you want to delete batch '{selected_batch}'? This action cannot be undone.")
-                        
-                        col_confirm1, col_confirm2 = st.columns(2)
-                        with col_confirm1:
-                            if st.button("✅ Yes, Delete Batch", type="primary"):
-                                # Get batch summary before deletion
-                                batch_summary_before = self.get_batch_summary(selected_batch, data_manager)
-                                
-                                # Delete the batch
-                                deleted_counts = self.delete_batch(selected_batch, data_manager)
-                                
-                                # Show results
-                                total_deleted = sum(deleted_counts.values())
-                                if total_deleted > 0:
-                                    st.success(f"✅ Successfully deleted batch '{selected_batch}': {total_deleted} records removed")
-                                    
-                                    # Show detailed breakdown
-                                    st.write("**Deletion Summary:**")
-                                    for sheet_name, count in deleted_counts.items():
-                                        if count > 0:
-                                            st.write(f"• {sheet_name}: {count} records deleted")
-                                else:
-                                    st.info(f"No records found for batch '{selected_batch}'")
-                                
-                                # Refresh the page to update the batch list
-                                st.rerun()
-                        
-                        with col_confirm2:
-                            if st.button("❌ Cancel"):
-                                st.rerun()
-        else:
-            st.info("No batches found. Upload some data to see available batches.")
         
         st.divider()
