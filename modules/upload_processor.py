@@ -23,8 +23,8 @@ class UploadProcessor:
         self.batch_manager = batch_manager
     
     def process_all_uploads(self, calls_uploader, up_leads, up_init, up_disc, up_ncl,
-                           calls_period_key, upload_start, upload_end, force_replace_calls,
-                           replace_leads, replace_init, replace_disc, replace_ncl):
+                          calls_period_key, upload_start, upload_end, force_replace_calls,
+                          replace_leads, replace_init, replace_disc, replace_ncl, bypass_date_filter=True):
         """Process all file uploads with batch management"""
         
         if not any([calls_uploader, up_leads, up_init, up_disc, up_ncl]):
@@ -50,7 +50,7 @@ class UploadProcessor:
             if self._process_conversion_uploads(up_leads, up_init, up_disc, up_ncl,
                                               upload_start, upload_end, batch_id,
                                               upload_date, replace_leads, replace_init,
-                                              replace_disc, replace_ncl):
+                                              replace_disc, replace_ncl, bypass_date_filter):
                 success_count += 1
         
         # Show results
@@ -123,7 +123,7 @@ class UploadProcessor:
     def _process_conversion_uploads(self, up_leads, up_init, up_disc, up_ncl,
                                   upload_start: date, upload_end: date, batch_id: str,
                                   upload_date: date, replace_leads: bool, replace_init: bool,
-                                  replace_disc: bool, replace_ncl: bool) -> bool:
+                                  replace_disc: bool, replace_ncl: bool, bypass_date_filter: bool) -> bool:
         """Process conversion data uploads"""
         
         success_count = 0
@@ -133,34 +133,34 @@ class UploadProcessor:
         if up_leads:
             total_count += 1
             if self._process_leads_upload(up_leads, upload_start, upload_end, batch_id,
-                                        upload_date, replace_leads):
+                                        upload_date, replace_leads, bypass_date_filter):
                 success_count += 1
         
         # Process Initial Consultation
         if up_init:
             total_count += 1
             if self._process_init_upload(up_init, upload_start, upload_end, batch_id,
-                                       upload_date, replace_init):
+                                       upload_date, replace_init, bypass_date_filter):
                 success_count += 1
         
         # Process Discovery Meeting
         if up_disc:
             total_count += 1
             if self._process_disc_upload(up_disc, upload_start, upload_end, batch_id,
-                                       upload_date, replace_disc):
+                                       upload_date, replace_disc, bypass_date_filter):
                 success_count += 1
         
         # Process New Client List
         if up_ncl:
             total_count += 1
             if self._process_ncl_upload(up_ncl, upload_start, upload_end, batch_id,
-                                      upload_date, replace_ncl):
+                                      upload_date, replace_ncl, bypass_date_filter):
                 success_count += 1
         
         return success_count > 0
     
     def _process_leads_upload(self, up_leads, upload_start: date, upload_end: date,
-                             batch_id: str, upload_date: date, replace: bool) -> bool:
+                             batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process Leads/PNCs upload"""
         try:
             # Check if file already uploaded
@@ -175,13 +175,18 @@ class UploadProcessor:
                 st.error("Failed to read leads file")
                 return False
             
-            # Filter by date range
-            filtered_df = self._filter_by_date_range(raw_df, upload_start, upload_end)
+            # ALWAYS upload all raw data to Google Sheets for auditing
+            st.info(f"📊 Uploading ALL {len(raw_df)} raw records to Google Sheets for auditing")
             
-            # Add batch metadata
+            # Add batch metadata to raw data
             processed_df = self.batch_manager.add_batch_metadata(
-                filtered_df, batch_id, upload_date, upload_start, upload_end
+                raw_df, batch_id, upload_date, upload_start, upload_end
             )
+            
+            # Show filtering info for reference (but don't filter the upload)
+            if not bypass_date_filter:
+                filtered_count = len(self._filter_by_date_range(raw_df, upload_start, upload_end))
+                st.info(f"📅 Date range {upload_start} to {upload_end} would include {filtered_count} records")
             
             # Get existing data
             existing_df = self.data_manager.read_worksheet_by_name("LEADS")
@@ -214,7 +219,7 @@ class UploadProcessor:
             return False
     
     def _process_init_upload(self, up_init, upload_start: date, upload_end: date,
-                            batch_id: str, upload_date: date, replace: bool) -> bool:
+                            batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process Initial Consultation upload"""
         try:
             # Check if file already uploaded
@@ -229,13 +234,18 @@ class UploadProcessor:
                 st.error("Failed to read initial consultation file")
                 return False
             
-            # Filter by date range
-            filtered_df = self._filter_by_date_range(raw_df, upload_start, upload_end)
+            # ALWAYS upload all raw data to Google Sheets for auditing
+            st.info(f"📊 Uploading ALL {len(raw_df)} raw records to Google Sheets for auditing")
             
-            # Add batch metadata
+            # Add batch metadata to raw data
             processed_df = self.batch_manager.add_batch_metadata(
-                filtered_df, batch_id, upload_date, upload_start, upload_end
+                raw_df, batch_id, upload_date, upload_start, upload_end
             )
+            
+            # Show filtering info for reference (but don't filter the upload)
+            if not bypass_date_filter:
+                filtered_count = len(self._filter_by_date_range(raw_df, upload_start, upload_end))
+                st.info(f"📅 Date range {upload_start} to {upload_end} would include {filtered_count} records")
             
             # Get existing data
             existing_df = self.data_manager.read_worksheet_by_name("INIT")
@@ -268,7 +278,7 @@ class UploadProcessor:
             return False
     
     def _process_disc_upload(self, up_disc, upload_start: date, upload_end: date,
-                            batch_id: str, upload_date: date, replace: bool) -> bool:
+                            batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process Discovery Meeting upload"""
         try:
             # Check if file already uploaded
@@ -283,13 +293,18 @@ class UploadProcessor:
                 st.error("Failed to read discovery meeting file")
                 return False
             
-            # Filter by date range
-            filtered_df = self._filter_by_date_range(raw_df, upload_start, upload_end)
+            # ALWAYS upload all raw data to Google Sheets for auditing
+            st.info(f"📊 Uploading ALL {len(raw_df)} raw records to Google Sheets for auditing")
             
-            # Add batch metadata
+            # Add batch metadata to raw data
             processed_df = self.batch_manager.add_batch_metadata(
-                filtered_df, batch_id, upload_date, upload_start, upload_end
+                raw_df, batch_id, upload_date, upload_start, upload_end
             )
+            
+            # Show filtering info for reference (but don't filter the upload)
+            if not bypass_date_filter:
+                filtered_count = len(self._filter_by_date_range(raw_df, upload_start, upload_end))
+                st.info(f"📅 Date range {upload_start} to {upload_end} would include {filtered_count} records")
             
             # Get existing data
             existing_df = self.data_manager.read_worksheet_by_name("DISC")
@@ -322,7 +337,7 @@ class UploadProcessor:
             return False
     
     def _process_ncl_upload(self, up_ncl, upload_start: date, upload_end: date,
-                           batch_id: str, upload_date: date, replace: bool) -> bool:
+                           batch_id: str, upload_date: date, replace: bool, bypass_date_filter: bool) -> bool:
         """Process New Client List upload"""
         try:
             # Check if file already uploaded
@@ -337,13 +352,18 @@ class UploadProcessor:
                 st.error("Failed to read new client list file")
                 return False
             
-            # Filter by date range
-            filtered_df = self._filter_by_date_range(raw_df, upload_start, upload_end)
+            # ALWAYS upload all raw data to Google Sheets for auditing
+            st.info(f"📊 Uploading ALL {len(raw_df)} raw records to Google Sheets for auditing")
             
-            # Add batch metadata
+            # Add batch metadata to raw data
             processed_df = self.batch_manager.add_batch_metadata(
-                filtered_df, batch_id, upload_date, upload_start, upload_end
+                raw_df, batch_id, upload_date, upload_start, upload_end
             )
+            
+            # Show filtering info for reference (but don't filter the upload)
+            if not bypass_date_filter:
+                filtered_count = len(self._filter_by_date_range(raw_df, upload_start, upload_end))
+                st.info(f"📅 Date range {upload_start} to {upload_end} would include {filtered_count} records")
             
             # Get existing data
             existing_df = self.data_manager.read_worksheet_by_name("NCL")
@@ -389,24 +409,47 @@ class UploadProcessor:
         
         if not date_columns:
             # If no date columns found, return all data
+            st.info(f"No date columns found in data. Including all {len(df)} records.")
             return df
+        
+        st.info(f"Found date columns: {date_columns}")
+        st.info(f"Filtering for date range: {start_date} to {end_date}")
         
         # Try to filter by any date column
         for date_col in date_columns:
             try:
+                st.info(f"Attempting to filter by column: {date_col}")
+                
+                # Show sample of date values before conversion
+                sample_dates = df[date_col].dropna().head(5).tolist()
+                st.info(f"Sample date values in {date_col}: {sample_dates}")
+                
                 # Convert to datetime
                 df[date_col] = pd.to_datetime(df[date_col], errors='coerce')
+                
+                # Show how many records have valid dates
+                valid_dates = df[date_col].notna().sum()
+                total_records = len(df)
+                st.info(f"Valid dates in {date_col}: {valid_dates}/{total_records} records")
                 
                 # Filter by date range
                 mask = (df[date_col].dt.date >= start_date) & (df[date_col].dt.date <= end_date)
                 filtered_df = df[mask].copy()
                 
+                st.info(f"Records in date range: {len(filtered_df)}/{total_records}")
+                
                 if not filtered_df.empty:
+                    st.success(f"Successfully filtered by {date_col}: {len(filtered_df)} records")
                     return filtered_df
-            except Exception:
+                else:
+                    st.warning(f"No records found in date range for {date_col}")
+                    
+            except Exception as e:
+                st.error(f"Error filtering by {date_col}: {str(e)}")
                 continue
         
-        # If no filtering worked, return original data
+        # If no filtering worked, show warning and return original data
+        st.warning(f"No records found in date range {start_date} to {end_date}. Including all {len(df)} records.")
         return df
     
     def _remove_by_date_range(self, df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
