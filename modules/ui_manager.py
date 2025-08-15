@@ -617,4 +617,3 @@ class UIManager:
         st.markdown(html, unsafe_allow_html=True)
 
 
-
