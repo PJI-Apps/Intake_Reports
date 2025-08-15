@@ -396,9 +396,13 @@ class UIManager:
                 
                 # Calculate average call time for aggregated data
                 if "Total Call Time" in existing_numeric_cols and "Completed Calls" in existing_numeric_cols:
-                    aggregated["Avg Call Time"] = (
-                        aggregated["Total Call Time"] / aggregated["Completed Calls"]
-                    ).round(2)
+                    # Avoid division by zero
+                    aggregated["Avg Call Time"] = aggregated.apply(
+                        lambda row: (
+                            row["Total Call Time"] / row["Completed Calls"]
+                        ).round(2) if row["Completed Calls"] > 0 else 0.0,
+                        axis=1
+                    )
                 
                 # Add back non-numeric columns (take first value from each group)
                 non_numeric_cols = [col for col in filtered_calls.columns 
